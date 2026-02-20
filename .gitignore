@@ -1,0 +1,47 @@
+# --- Dependencies ---
+node_modules/
+.pnp
+.pnp.js
+
+# --- Expo & Metro ---
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# --- Native Build Artifacts ---
+ios/
+android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# --- Environment & Secrets ---
+.env
+.env*.local
+.env.project
+.rork
+*.pem
+
+# --- Debug & Logs ---
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+logs
+*.log
+
+# --- System Files ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# --- Tools & Config ---
+.vercel
+.turbo
+*.tsbuildinfo
+rork-eslint.config.js
