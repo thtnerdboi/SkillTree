@@ -4,9 +4,10 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { ErrorBoundary } from "../components/ErrorBoundary";
-import { AppStateProvider } from "../state/app-state";
-import { trpc, trpcClient } from "../lib/trpc";
+// Go up TWO levels (../../) to get out of (tabs) and app folders
+import { ErrorBoundary } from "../../components/ErrorBoundary"; 
+import { AppStateProvider } from "../../state/app-state";
+import { trpc, trpcClient } from "../../lib/trpc";
 
 SplashScreen.preventAutoHideAsync();
 

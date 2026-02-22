@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Pressable,
@@ -23,13 +23,11 @@ import {
   Lightbulb,
   Lock,
   Sparkles,
+  Star,
   Trophy,
   Wind,
   Zap,
 } from "lucide-react-native";
-import { generateObject } from "@rork-ai/toolkit-sdk";
-import { z } from "zod";
-
 import Colors from "@/constants/colors";
 import {
   Challenge,
@@ -40,6 +38,8 @@ import {
   getXpForNextLevel,
 } from "@/mocks/mvp-data";
 import { useAppState, OnboardingAnswers } from "@/state/app-state";
+import { analytics } from "@/utils/analytics";
+import { ANALYTICS_EVENTS } from "@/utils/event-types";
 import { OnboardingScreens } from "@/components/OnboardingScreens";
 import { NodePanel } from "@/components/NodePanel";
 import { PrestigeModal } from "@/components/PrestigeModal";
@@ -47,15 +47,8 @@ import { PrestigeModal } from "@/components/PrestigeModal";
 type IconComp = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
 const ICON_MAP: Record<string, IconComp> = {
-  Heart, Wind, Activity, Eye, Flame, Lightbulb, Sparkles, Hammer, Zap, Award, Trophy,
+  Heart, Wind, Activity, Eye, Flame, Lightbulb, Sparkles, Hammer, Zap, Award, Trophy, Star,
 };
-
-const ONBOARD_SCHEMA = z.object({
-  nodes: z.array(z.object({
-    nodeId: z.string(),
-    challenges: z.array(z.object({ title: z.string(), detail: z.string() })).min(3).max(3),
-  })),
-});
 
 // Tree canvas Y positions (0=top, increases downward; Origin is at BOTTOM)
 const ORIGIN_Y = 1340;
@@ -85,6 +78,7 @@ const NODE_LAYOUT: Record<string, NodeLayout> = {
   mastery:   { xFrac: 0.82, y: ROW3_Y, shape: "square" },
   peak:      { xFrac: 0.5,  y: ROW4_Y, shape: "circle" },
   flow:      { xFrac: 0.18, y: ROW4_Y, shape: "square" },
+  apex:      { xFrac: 0.82, y: ROW4_Y, shape: "square" },
 };
 
 const CONNECTIONS: Array<[string, string]> = [
@@ -99,6 +93,7 @@ const CONNECTIONS: Array<[string, string]> = [
   ["forge", "mastery"],
   ["power", "peak"],
   ["insight", "flow"],
+  ["mastery", "apex"],
 ];
 
 // ── Progress Ring ─────────────────────────────────────────────────
@@ -156,6 +151,10 @@ export default function TreeScreen() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<(typeof SKILL_NODES)[0] | null>(null);
 
+  useEffect(() => {
+    analytics.track(ANALYTICS_EVENTS.ONBOARDING_STARTED);
+  }, []);
+
   const scrollRef = useRef<ScrollView>(null);
   const hasScrolled = useRef(false);
   const xpFlashAnim = useRef(new Animated.Value(0)).current;
@@ -177,40 +176,14 @@ export default function TreeScreen() {
   const generateOnboardingChallenges = useCallback(async (answers: OnboardingAnswers) => {
     setGeneratingChallenges(true);
     setGenerateError(null);
-    console.log("[onboard] Generating AI challenges for all nodes");
+    console.log("[onboard] Building challenge tree from default challenges");
     try {
-      const bodyNodes = SKILL_NODES.filter((n) => n.domainId === "body");
-      const mindNodes = SKILL_NODES.filter((n) => n.domainId === "mind");
-      const craftNodes = SKILL_NODES.filter((n) => n.domainId === "craft");
-
-      const buildPrompt = (goal: string, domainLabel: string, nodes: typeof SKILL_NODES) =>
-        `You are a personal development coach. User's ${domainLabel} goal: "${goal}". Generate exactly 3 specific daily challenges for each of these nodes: ${nodes.map((n) => `${n.id}: "${n.title}" — ${n.description}`).join(", ")}. Each challenge: 2–4 word title, 3–6 word detail. Return nodeId matching exactly.`;
-
-      const [bodyResult, mindResult, craftResult] = await Promise.all([
-        generateObject({ messages: [{ role: "user", content: buildPrompt(answers.body, "Body", bodyNodes) }], schema: ONBOARD_SCHEMA }),
-        generateObject({ messages: [{ role: "user", content: buildPrompt(answers.mind, "Mind", mindNodes) }], schema: ONBOARD_SCHEMA }),
-        generateObject({ messages: [{ role: "user", content: buildPrompt(answers.craft, "Craft", craftNodes) }], schema: ONBOARD_SCHEMA }),
-      ]);
-
+      await new Promise<void>((resolve) => setTimeout(resolve, 1400));
       const allGenerated: Record<string, Challenge[]> = {};
-      const processResult = (result: typeof bodyResult, nodes: typeof SKILL_NODES) => {
-        result.nodes.forEach((n) => {
-          const node = nodes.find((sn) => sn.id === n.nodeId);
-          if (!node) return;
-          allGenerated[n.nodeId] = n.challenges.map((c, i) => ({
-            id: `ai-${n.nodeId}-${i}`,
-            nodeId: n.nodeId,
-            title: c.title,
-            detail: c.detail,
-            xp: node.defaultChallenges[i]?.xp ?? 50,
-          }));
-        });
-      };
-      processResult(bodyResult, bodyNodes);
-      processResult(mindResult, mindNodes);
-      processResult(craftResult, craftNodes);
-
-      console.log("[onboard] Generated challenges for", Object.keys(allGenerated).length, "nodes");
+      SKILL_NODES.forEach((node) => {
+        allGenerated[node.id] = node.defaultChallenges;
+      });
+      console.log("[onboard] Built challenges for", Object.keys(allGenerated).length, "nodes");
       completeOnboarding(answers, allGenerated);
     } catch (err) {
       console.error("[onboard] Generation failed:", err);
@@ -293,7 +266,14 @@ export default function TreeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.brand}>SkillTree</Text>
-            <Text style={styles.greeting}>Hey {state.displayName || "Adventurer"}</Text>
+            <View style={styles.greetingRow}>
+              <Text style={styles.greeting}>Hey {state.displayName || "Adventurer"}</Text>
+              {state.isPro && (
+                <View style={styles.proBadge}>
+                  <Text style={styles.proBadgeText}>PRO</Text>
+                </View>
+              )}
+            </View>
           </View>
           <ProgressRing completed={completedChallenges} total={totalChallenges} />
         </View>
@@ -311,7 +291,7 @@ export default function TreeScreen() {
         {/* XP progress bar */}
         <View style={styles.xpBarWrap}>
           <View style={styles.xpBarTrack}>
-            <View style={[styles.xpBarFill, { width: `${Math.min(xpProgress * 100, 100)}%` as any }]} />
+            <View style={[styles.xpBarFill, { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` }]} />
           </View>
           <Text style={styles.xpBarLabel}>
             LV{currentLevel} · {state.xp - xpCurrent} / {xpNext - xpCurrent} XP to next level
@@ -581,6 +561,15 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   greeting: { fontSize: 24, fontWeight: "900", color: Colors.light.text, marginTop: 2 },
+  greetingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
+  proBadge: {
+    backgroundColor: Colors.light.tint,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    alignSelf: "center",
+  },
+  proBadgeText: { fontSize: 10, fontWeight: "900", color: "#060810", letterSpacing: 1 },
 
   // ── Legend ───────────────────────────────────────────────────────
   legend: { flexDirection: "row", justifyContent: "center", gap: 24, paddingVertical: 10 },

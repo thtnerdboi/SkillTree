@@ -1,18 +1,18 @@
 {
+{
   "expo": {
     "name": "SkillTree",
-    "slug": "skilltree-app",
+    "slug": "skilltree-op8uvxx",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "skilltree",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
+    "newArchEnabled": false,
+    "android": {
+      "package": "com.yourname.skilltree",
+      "config": {
+        "googleMobileAdsAppId": "ca-app-pub-3940256099942544~3347511713" 
+      }
+    }
+  }
+}
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yourname.skilltree"

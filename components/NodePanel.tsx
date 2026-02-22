@@ -32,15 +32,6 @@ import { useAppState } from "@/state/app-state";
 
 type IconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
-const challengeSchema = z.object({
-  challenges: z.array(
-    z.object({
-      title: z.string().describe("2-4 word action title"),
-      detail: z.string().describe("3-6 word context or metric"),
-    })
-  ).min(3).max(3),
-});
-
 type Props = {
   node: (typeof SKILL_NODES)[0];
   onClose: () => void;
@@ -77,37 +68,50 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
 
   const regenerateNodeMutation = useMutation({
     mutationFn: async ({ goal }: { goal: string }) => {
+      console.log("[panel] Generating AI challenges for node:", node.id, "goal:", goal);
       const result = await generateObject({
         messages: [
           {
             role: "user",
-            content: `You are a personal development coach.
+            content: `You are a personal development coach. Generate 3 specific, actionable daily challenges for the "${node.title}" skill node.
 
-Node: "${node.title}" (${DOMAIN_LABEL[node.domainId]} domain)
-Purpose: ${node.description}
-User's personal goal: "${goal}"
+Skill description: ${node.description}
+User's personal goal: ${goal}
 
-Generate exactly 3 specific daily challenges for this node. Each must:
-- Be completable in 5–30 minutes
-- Have a short punchy title (2–4 words)
-- Have a brief detail (3–6 words: time, reps, or context)
-- Directly tied to what the user wrote as their goal`,
+Each challenge should be:
+- Directly related to the user's stated goal
+- Completable within a single day
+- Specific and measurable
+- Progressive (builds toward the goal)
+
+Return exactly 3 challenges.`,
           },
         ],
-        schema: challengeSchema,
+        schema: z.object({
+          challenges: z.array(
+            z.object({
+              title: z.string().describe("Short challenge title, max 5 words"),
+              detail: z.string().describe("Specific action description, max 10 words"),
+            })
+          ).length(3),
+        }),
       });
-      return result;
-    },
-    onSuccess: (result) => {
+      const xpValues = node.defaultChallenges.map((c) => c.xp);
       const challenges: Challenge[] = result.challenges.map((c, i) => ({
         id: `ai-${node.id}-${i}-${Date.now()}`,
         nodeId: node.id,
         title: c.title,
         detail: c.detail,
-        xp: node.defaultChallenges[i]?.xp ?? 50,
+        xp: xpValues[i] ?? 30,
       }));
+      return challenges;
+    },
+    onSuccess: (challenges) => {
       setAiChallenges(node.id, challenges);
-      console.log("[panel] Regenerated challenges for node:", node.id);
+      console.log("[panel] AI challenges set for node:", node.id);
+    },
+    onError: (e) => {
+      console.error("[panel] AI generation failed:", e);
     },
   });
 
