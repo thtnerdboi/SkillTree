@@ -214,7 +214,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
 
         // Apply Pro multiplier locally!
         if (current.isPro && xpDelta > 0) {
-           xpDelta = Math.round(xpDelta * 1.5);
+          xpDelta = Math.round(xpDelta * 1.5);
         }
 
         return {
@@ -295,11 +295,11 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     }));
   }, [updateState]);
 
-  const updateProStatus = useCallback((status: boolean) => {
+  // FIX: renamed from updateProStatus -> setPro to match consumers (ProUpgradeModal etc.)
+  const setPro = useCallback((status: boolean) => {
     console.log(`[state] Updating Pro Status to: ${status}`);
     updateState((current) => ({ ...current, isPro: status }));
   }, [updateState]);
-
 
   const isNodeComplete = useCallback(
     (nodeId: string): boolean => {
@@ -413,7 +413,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     triggerPrestige,
     dismissPrestige,
     recordAiGeneration,
-    updateProStatus,
+    setPro, // FIX: was updateProStatus
     isNodeComplete,
     isNodeUnlocked,
     isLevelUnlocked,

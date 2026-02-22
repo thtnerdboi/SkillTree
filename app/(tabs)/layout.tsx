@@ -1,42 +1,17 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { Tabs } from "expo-router";
 
-// Go up TWO levels (../../) to get out of (tabs) and app folders
-import { ErrorBoundary } from "../../components/ErrorBoundary"; 
-import { AppStateProvider } from "../../state/app-state";
-import { trpc, trpcClient } from "../../lib/trpc";
+// FIX: The original file was a copy of the root layout (app/layout.tsx) placed
+// incorrectly inside (tabs). This caused a recursive Stack.Screen "(tabs)" inside
+// the (tabs) folder itself, and duplicated all providers.
+//
+// This file should only define the Tab navigator for the (tabs) group.
+// All providers (QueryClient, tRPC, AppState, GestureHandler, ErrorBoundary)
+// live in app/layout.tsx where they belong.
 
-SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient();
-
-function RootLayoutNav() {
+export default function TabLayout() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
-  );
-}
-
-export default function RootLayout() {
-  useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <AppStateProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ErrorBoundary>
-              <RootLayoutNav />
-            </ErrorBoundary>
-          </GestureHandlerRootView>
-        </AppStateProvider>
-      </trpc.Provider>
-    </QueryClientProvider>
+    <Tabs screenOptions={{ headerShown: false, tabBarStyle: { display: "none" } }}>
+      <Tabs.Screen name="index" options={{ headerShown: false }} />
+    </Tabs>
   );
 }

@@ -207,6 +207,21 @@ export const SKILL_NODES: SkillNode[] = [
       { id: "flow-c3", nodeId: "flow", title: "Recovery ritual", detail: "10-min wind-down after deep work", xp: 75 },
     ],
   },
+  // FIX: apex node was referenced in NODE_LAYOUT in index.tsx but was missing from SKILL_NODES
+  {
+    id: "apex",
+    levelNumber: 4,
+    domainId: "craft",
+    title: "Apex",
+    description: "The pinnacle of your craft. Every skill, habit, and tool is now second nature — you operate at the very edge of what's possible.",
+    icon: "Star",
+    goalPrompt: "e.g. I want to become world-class at my craft",
+    defaultChallenges: [
+      { id: "apex-c1", nodeId: "apex", title: "Masterwork", detail: "Produce your single best piece of work", xp: 75 },
+      { id: "apex-c2", nodeId: "apex", title: "Mentor someone", detail: "Share your expertise with a peer", xp: 75 },
+      { id: "apex-c3", nodeId: "apex", title: "Raise the bar", detail: "Set a new personal record in your craft", xp: 75 },
+    ],
+  },
 ];
 
 export const NODE_COMPLETION_XP: Record<number, number> = {
