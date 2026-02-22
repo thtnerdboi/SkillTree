@@ -40,6 +40,8 @@ export type StoredState = {
   prestigeCount: number;
   friends: Friend[];
   lastResetAt: number;
+  isPro: boolean;
+  lastAiGenTime: Record<string, number>;
 };
 
 const STORAGE_KEY = "arcstep-state-v6";
@@ -57,6 +59,8 @@ const createDefaultState = (): StoredState => ({
   prestigeCount: 0,
   friends: [],
   lastResetAt: Date.now(),
+  isPro: false,
+  lastAiGenTime: {},
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
@@ -91,6 +95,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         friends: storedQuery.data.friends ?? [],
         xp: storedQuery.data.xp ?? 0,
         prestigeCount: storedQuery.data.prestigeCount ?? 0,
+        isPro: storedQuery.data.isPro ?? false,
+        lastAiGenTime: storedQuery.data.lastAiGenTime ?? {},
       });
     }
   }, [storedQuery.data]);
@@ -206,6 +212,11 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
           }
         }
 
+        // Apply Pro multiplier locally!
+        if (current.isPro && xpDelta > 0) {
+           xpDelta = Math.round(xpDelta * 1.5);
+        }
+
         return {
           ...current,
           challengeProgress: newProgress,
@@ -272,6 +283,23 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     },
     [updateState]
   );
+
+  const recordAiGeneration = useCallback((domainId: string) => {
+    console.log(`[state] Recording AI generation time for: ${domainId}`);
+    updateState((current) => ({
+      ...current,
+      lastAiGenTime: {
+        ...current.lastAiGenTime,
+        [domainId]: Date.now(),
+      },
+    }));
+  }, [updateState]);
+
+  const updateProStatus = useCallback((status: boolean) => {
+    console.log(`[state] Updating Pro Status to: ${status}`);
+    updateState((current) => ({ ...current, isPro: status }));
+  }, [updateState]);
+
 
   const isNodeComplete = useCallback(
     (nodeId: string): boolean => {
@@ -384,6 +412,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     addBonusXp,
     triggerPrestige,
     dismissPrestige,
+    recordAiGeneration,
+    updateProStatus,
     isNodeComplete,
     isNodeUnlocked,
     isLevelUnlocked,

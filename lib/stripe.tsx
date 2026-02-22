@@ -1,28 +1,24 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
-
-type StripeContextValue = {
-  initPaymentSheet: (params: { clientSecret: string; merchantDisplayName: string }) => Promise<{ error?: { message: string } }>;
-  presentPaymentSheet: () => Promise<{ error?: { message: string } }>;
-  loading: boolean;
-};
-
-const StripeContext = createContext<StripeContextValue | undefined>(undefined);
+import React, { createContext, useContext } from "react";
+import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 
 type MockStripeProviderProps = {
-  publishableKey: string;
+  publishableKey?: string;
   children: React.ReactNode;
 };
 
-export function MockStripeProvider({ publishableKey: _publishableKey, children }: MockStripeProviderProps) {
-  const [loading, setLoading] = useState<boolean>(false);
-
-  const initPaymentSheet = useCallback(
-    async (_params: { clientSecret: string; merchantDisplayName: string }) => {
-      console.log("[stripe] initPaymentSheet called (mock)");
-      return {};
-    },
-    []
+export function MockStripeProvider({ children }: MockStripeProviderProps) {
+  // Now using the REAL Stripe Provider!
+  return (
+    <StripeProvider
+      publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""}
+    >
+      {children}
+    </StripeProvider>
   );
+}
+
+// Export the real stripe hooks so the payment sheet works
+export const useStripePayment = useStripe;
 
   const presentPaymentSheet = useCallback(async () => {
     console.log("[stripe] presentPaymentSheet called (mock) — simulating success");

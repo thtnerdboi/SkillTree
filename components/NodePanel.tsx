@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Alert, // Added Alert here!
 } from "react-native";
 import {
   Check,
@@ -40,7 +41,7 @@ type Props = {
 };
 
 export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
-  const { state, toggleChallenge, setAiChallenges, isNodeComplete, isNodeUnlocked } = useAppState();
+  const { state, toggleChallenge, setAiChallenges, isNodeComplete, isNodeUnlocked, recordAiGeneration } = useAppState();
   const [goalInput, setGoalInput] = useState<string>("");
   const panelAnim = useRef(new Animated.Value(0)).current;
 
@@ -181,6 +182,8 @@ Return exactly 3 challenges.`,
                   numberOfLines={2}
                   testID={`goal-input-${node.id}`}
                 />
+                
+                {/* 🚨 FREEMIUM LOCK ADDED HERE 🚨 */}
                 <TouchableOpacity
                   style={[
                     styles.regenBtn,
@@ -189,7 +192,30 @@ Return exactly 3 challenges.`,
                       : { backgroundColor: "#0E1320", borderColor: "#1A2030", borderWidth: 1 },
                   ]}
                   onPress={() => {
+                    // 1. CHECK COOLDOWN FOR THIS SPECIFIC SECTION
+                    const COOLDOWN_MS = 24 * 60 * 60 * 1000;
+                    const lastGen = state.lastAiGenTime?.[node.domainId] || 0;
+                    const timeSinceLastGen = Date.now() - lastGen;
+                    const isCooldownActive = timeSinceLastGen < COOLDOWN_MS;
+
+                    // 2. THE FREEMIUM CHECK
+                    if (!state.isPro && isCooldownActive) {
+                      const hoursLeft = Math.ceil((COOLDOWN_MS - timeSinceLastGen) / (1000 * 60 * 60));
+                      
+                      Alert.alert(
+                        "⏱️ AI Recharging", 
+                        `You've already generated your free ${node.domainId.toUpperCase()} goals for today! Wait ${hoursLeft} hours or upgrade to SkillTree Pro for unlimited generations.`,
+                        [
+                          { text: "Maybe Later", style: "cancel" },
+                          { text: "Unlock Pro", onPress: () => console.log("Show Pro Modal") } 
+                        ]
+                      );
+                      return; // Stop generation!
+                    }
+
+                    // 3. EXECUTE GENERATION
                     if (goalInput.trim().length > 8 && !regenerateNodeMutation.isPending) {
+                      recordAiGeneration(node.domainId); // Save the timestamp for THIS section
                       regenerateNodeMutation.mutate({ goal: goalInput.trim() });
                     }
                   }}
@@ -201,6 +227,7 @@ Return exactly 3 challenges.`,
                     {regenerateNodeMutation.isPending ? "Generating..." : hasAiChallenges ? "Regenerate" : "Generate My Goals"}
                   </Text>
                 </TouchableOpacity>
+
               </View>
             )}
 
