@@ -10,11 +10,11 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors.light.tint,
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: '#0C1120', // Matches your shell background
+          backgroundColor: '#0C1120',
           borderTopColor: '#1A2238',
           height: 60,
           paddingBottom: 8,
-          display: 'flex', // Explicitly ensure it's showing
+          display: 'flex', // This makes the bar visible!
         },
         headerShown: false,
       }}>

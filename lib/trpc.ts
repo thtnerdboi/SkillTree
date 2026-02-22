@@ -9,7 +9,7 @@ export const trpc = createTRPCReact<AppRouter>();
 const getBaseUrl = () => {
   // If you deploy your backend later, you can put the real URL in your .env file
   // For now, we point it to your local machine!
-  return process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+  return process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.118:3000/api/trpc";
 };
 
 export const trpcClient = trpc.createClient({

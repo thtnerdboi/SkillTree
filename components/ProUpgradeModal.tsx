@@ -66,7 +66,7 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
 
   const subscribeMutation = useMutation({
     mutationFn: async () => {
-      console.log("[pro] Initiating $5.99/mo subscription");
+      console.log("[pro] Initiating £5.99/mo subscription");
       const { clientSecret } = await createIntentMutation.mutateAsync({
         userId: state.userId,
       });
@@ -133,7 +133,7 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
               </View>
 
               <View style={styles.priceRow}>
-                <Text style={styles.priceAmount}>$5.99</Text>
+                <Text style={styles.priceAmount}>£5.99</Text>
                 <View>
                   <Text style={styles.pricePeriod}>/ month</Text>
                   <Text style={styles.priceCancel}>Cancel anytime</Text>
@@ -168,7 +168,7 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
                 ) : (
                   <>
                     <Crown size={16} color="#060810" strokeWidth={2.5} />
-                    <Text style={styles.subscribeBtnText}>Subscribe for $5.99/mo</Text>
+                    <Text style={styles.subscribeBtnText}>Subscribe for £5.99/mo</Text>
                   </>
                 )}
               </TouchableOpacity>

@@ -1,6 +1,5 @@
 import { TRPCError } from "@trpc/server";
 import * as z from "zod";
-
 import {
   createTRPCRouter,
   protectedProcedure,
@@ -50,13 +49,11 @@ export const socialRouter = createTRPCRouter({
         });
       }
       console.log("[social] sendFriendRequest", input.fromUserId, input.toInviteCode);
-
       const toUser = storeApi.findUserByInvite(input.toInviteCode);
       if (!toUser) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message:
-            "No user found with that invite code. Make sure they have opened the app at least once.",
+          message: "No user found with that invite code.",
         });
       }
       if (toUser.id === input.fromUserId) {
@@ -84,10 +81,9 @@ export const socialRouter = createTRPCRouter({
       if (ctx.userId !== input.userId) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "You can only view your own friend requests.",
+          message: "You can only view your own requests.",
         });
       }
-      console.log("[social] getFriendRequests", input.userId);
       return storeApi.listFriendRequests(input.userId).map((request) => {
         const fromUser = storeApi.getUser(request.fromUserId);
         return {
@@ -101,28 +97,21 @@ export const socialRouter = createTRPCRouter({
     }),
 
   acceptFriendRequest: protectedProcedure
-    .input(
-      z.object({
-        userId: z.string().min(1),
-        requestId: z.string().min(1),
-      })
-    )
+    .input(z.object({ userId: z.string().min(1), requestId: z.string().min(1) }))
     .mutation(({ input, ctx }) => {
       if (ctx.userId !== input.userId) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "You can only accept your own friend requests.",
+          message: "You can only accept your own requests.",
         });
       }
-      console.log("[social] acceptFriendRequest", input.userId, input.requestId);
-
       const request = storeApi
         .listFriendRequests(input.userId)
         .find((item) => item.id === input.requestId);
       if (!request) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Friend request not found or already accepted.",
+          message: "Request not found.",
         });
       }
       storeApi.addFriendship(request.fromUserId, request.toUserId);
@@ -134,12 +123,8 @@ export const socialRouter = createTRPCRouter({
     .input(z.object({ userId: z.string().min(1) }))
     .query(({ input, ctx }) => {
       if (ctx.userId !== input.userId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You can only view your own circle.",
-        });
+        throw new TRPCError({ code: "FORBIDDEN" });
       }
-      console.log("[social] getCircleStats", input.userId);
       const friendIds = storeApi.listFriends(input.userId);
       const ids = [input.userId, ...friendIds];
       return ids
@@ -156,82 +141,42 @@ export const socialRouter = createTRPCRouter({
   createSubscriptionIntent: protectedProcedure
     .input(z.object({ userId: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      if (ctx.userId !== input.userId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You can only create a subscription for yourself.",
-        });
-      }
-      console.log("[social] createSubscriptionIntent for", input.userId);
-
-      const externalUrl = process.env.STRIPE_SUBSCRIPTION_INTENT_URL;
       const stripeSecret = process.env.STRIPE_SECRET_KEY;
 
-      if (externalUrl) {
-        const response = await fetch(externalUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: input.userId }),
-        });
-        if (!response.ok) {
-          const text = await response.text();
-          console.log("[social] External intent failed:", response.status, text);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Subscription service unavailable. Please try again.",
-          });
-        }
-        const data = (await response.json()) as { clientSecret?: string };
-        if (!data.clientSecret) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Subscription service returned no client secret.",
-          });
-        }
-        return { clientSecret: data.clientSecret };
+      if (!stripeSecret) {
+        console.log("⚠️ Stripe key missing; returning mock secret");
+        const mockClientSecret = `pi_mock_${Date.now()}_secret_${Math.random().toString(36).slice(2)}`;
+        return { clientSecret: mockClientSecret };
       }
 
-      if (stripeSecret) {
-        const body = new URLSearchParams();
-        body.set("mode", "subscription");
-        body.set("line_items[0][price]", process.env.STRIPE_PRICE_ID ?? "");
-        body.set("line_items[0][quantity]", "1");
-        body.set("success_url", process.env.STRIPE_SUCCESS_URL ?? "https://example.com/success");
-        body.set("cancel_url", process.env.STRIPE_CANCEL_URL ?? "https://example.com/cancel");
-        body.set("client_reference_id", input.userId);
+      console.log("[social] Calling Stripe for user:", input.userId);
 
-        const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${stripeSecret}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: body.toString(),
+      const response = await fetch("https://api.stripe.com/v1/payment_intents", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${stripeSecret}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          amount: "599", // Charging 599 pence (£5.99)
+          currency: "gbp",
+          "metadata[userId]": input.userId,
+          "payment_method_types[]": "card",
+        }).toString(),
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        console.log("❌ STRIPE ERROR:", data.error.message);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: data.error.message,
         });
-
-        if (!response.ok) {
-          const text = await response.text();
-          console.log("[social] Stripe API error:", response.status, text);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Stripe session failed. Please try again.",
-          });
-        }
-
-        const data = (await response.json()) as { id?: string; url?: string };
-        if (!data.id) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Stripe session creation failed.",
-          });
-        }
-
-        return { clientSecret: data.id };
       }
 
-      console.log("[social] Stripe env missing; returning mock client secret");
-      const mockClientSecret = `pi_mock_${Date.now()}_secret_${Math.random().toString(36).slice(2)}`;
-      return { clientSecret: mockClientSecret };
+      console.log("✅ SUCCESS: Client Secret created");
+      return { clientSecret: data.client_secret };
     }),
 
   healthCheck: publicProcedure.query(() => ({
