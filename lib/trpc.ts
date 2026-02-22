@@ -7,13 +7,9 @@ import type { AppRouter } from "@/backend/trpc/app-router";
 export const trpc = createTRPCReact<AppRouter>();
 
 const getBaseUrl = () => {
-  const url = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-  if (!url) {
-    throw new Error(
-      "Rork did not set EXPO_PUBLIC_RORK_API_BASE_URL, please use support"
-    );
-  }
-  return url;
+  // If you deploy your backend later, you can put the real URL in your .env file
+  // For now, we point it to your local machine!
+  return process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 };
 
 export const trpcClient = trpc.createClient({
