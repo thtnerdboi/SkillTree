@@ -45,3 +45,9 @@ Thumbs.db
 .turbo
 *.tsbuildinfo
 rork-eslint.config.js
+
+# --- EAS Build Artifacts ---
+*.apk
+*.aab
+*.ipa
+*.tar.gz
