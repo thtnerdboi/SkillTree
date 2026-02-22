@@ -9,7 +9,7 @@ export const trpc = createTRPCReact<AppRouter>();
 const getBaseUrl = () => {
   // If you deploy your backend later, you can put the real URL in your .env file
   // For now, we point it to your local machine!
-  return process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.118:3000/api/trpc";
+  return process.env.EXPO_PUBLIC_API_URL || "https://skilltree-backend-rff0.onrender.com";
 };
 
 export const trpcClient = trpc.createClient({
