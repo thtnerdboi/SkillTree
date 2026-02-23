@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import {
   Animated,
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Constants from "expo-constants";
 import {
   Check,
   Crown,
@@ -36,6 +38,7 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
   const { state, setPro } = useAppState();
   const { initPaymentSheet, presentPaymentSheet } = useStripePayment();
   const [successVisible, setSuccessVisible] = useState<boolean>(false);
+  const isExpoGo = Constants.appOwnership === "expo";
 
   const scaleAnim = useRef(new Animated.Value(0.88)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -66,6 +69,12 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
 
   const subscribeMutation = useMutation({
     mutationFn: async () => {
+      if (isExpoGo) {
+        throw new Error(
+          "Stripe payments are not supported in Expo Go. Use an EAS development build or a release build to test Pro checkout."
+        );
+      }
+
       console.log("[pro] Initiating £5.99/mo subscription");
       const { clientSecret } = await createIntentMutation.mutateAsync({
         userId: state.userId,
@@ -89,6 +98,7 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
     },
     onError: (err) => {
       console.error("[pro] Subscription error:", err);
+      Alert.alert("Unable to start checkout", err.message);
     },
   });
 
@@ -176,6 +186,11 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
               <Text style={styles.legal}>
                 Billed monthly. Secure payment via Stripe.
               </Text>
+              {isExpoGo && (
+                <Text style={styles.errorText}>
+                  Stripe checkout cannot run inside Expo Go. Use a development build to test Pro.
+                </Text>
+              )}
             </>
           )}
         </Animated.View>
