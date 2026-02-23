@@ -32,7 +32,7 @@
 	  [
 		"@stripe/stripe-react-native",
 		{
-		  "merchantIdentifier": "merchant.com.skilltree",
+		  "merchantIdentifier": "merchant.com.arcstep.skilltree",
 		  "enableGooglePay": true
 		}
 	  ]
