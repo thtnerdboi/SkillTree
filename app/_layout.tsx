@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppStateProvider } from "../state/app-state";
@@ -15,10 +16,15 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-    </Stack>
+    <StripeProvider
+      publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
+      merchantIdentifier="merchant.com.arcstep.skilltree" 
+    >
+      <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+      </Stack>
+    </StripeProvider>
   );
 }
 
@@ -32,7 +38,7 @@ export default function RootLayout() {
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         {/* 2. USE THE REAL STRIPE PROVIDER WITH YOUR PUBLISHABLE KEY */}
         <StripeProvider 
-          publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "pk_test_YOUR_KEY_HERE"}
+          publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "pk_live_51T3ZS02M4vH3lvfiuESDcQVdGiBQpfMiywYgaAW3gFPgFvPzzEUvrv0bRiDDGEhuD8djfVoPXrMY5e9c1xlDQKVt00QwTCJIQa"}
         >
           <AppStateProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>

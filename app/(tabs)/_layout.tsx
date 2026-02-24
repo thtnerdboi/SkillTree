@@ -2,8 +2,11 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { TreePine, Users, User } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 1. Import this
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets(); // 2. Get the phone's safe zone numbers
+
   return (
     <Tabs
       screenOptions={{
@@ -12,9 +15,11 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: '#0C1120',
           borderTopColor: '#1A2238',
-          height: 60,
-          paddingBottom: 8,
-          display: 'flex', // This makes the bar visible!
+          // 3. Dynamic height: base height + the bottom bar size
+          height: 60 + insets.bottom, 
+          // 4. Dynamic padding: push icons up exactly enough
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8, 
+          display: 'flex',
         },
         headerShown: false,
       }}>
