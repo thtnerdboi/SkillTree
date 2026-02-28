@@ -17,78 +17,106 @@ export const socialRouter = createTRPCRouter({
         weeklyCompletion: z.number().min(0).max(100),
       })
     )
-    .mutation(({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) => {
       if (ctx.userId !== input.userId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "You can only update your own profile." });
       }
       console.log("[social] upsertUser", input.userId);
-      return storeApi.upsertUser({
+      
+      const existing = await storeApi.getUser(input.userId);
+      const isPro = existing ? existing.isPro : false;
+      const stripeCustomerId = existing ? existing.stripeCustomerId : null;
+
+      return await storeApi.upsertUser({
         id: input.userId,
         name: input.name,
         inviteCode: input.inviteCode,
         weeklyCompletion: input.weeklyCompletion,
-        updatedAt: Date.now(),
+        updatedAt: Math.floor(Date.now() / 1000),
+        isPro,
+        stripeCustomerId
       });
+    }),
+
+  getUser: protectedProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .query(async ({ input, ctx }) => {
+      if (ctx.userId !== input.userId) throw new TRPCError({ code: "FORBIDDEN" });
+      return await storeApi.getUser(input.userId);
     }),
 
   sendFriendRequest: protectedProcedure
     .input(z.object({ fromUserId: z.string().min(1), toInviteCode: z.string().min(1) }))
-    .mutation(({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) => {
       if (ctx.userId !== input.fromUserId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "You can only send requests as yourself." });
       }
-      const toUser = storeApi.findUserByInvite(input.toInviteCode);
+      const toUser = await storeApi.findUserByInvite(input.toInviteCode);
       if (!toUser) throw new TRPCError({ code: "NOT_FOUND", message: "No user found with that invite code." });
       if (toUser.id === input.fromUserId) throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot add yourself." });
-      if (storeApi.areFriends(input.fromUserId, toUser.id)) return { status: "already_friends" } as const;
-      const existing = storeApi.listFriendRequests(toUser.id).find((r) => r.fromUserId === input.fromUserId);
+      
+      const areFriends = await storeApi.areFriends(input.fromUserId, toUser.id);
+      if (areFriends) return { status: "already_friends" } as const;
+      
+      const requests = await storeApi.listFriendRequests(toUser.id);
+      const existing = requests.find((r) => r.fromUserId === input.fromUserId);
       if (existing) return { status: "already_pending" } as const;
-      const request = storeApi.addFriendRequest(input.fromUserId, toUser.id);
+      
+      const request = await storeApi.addFriendRequest(input.fromUserId, toUser.id);
       return { status: "requested", requestId: request.id } as const;
     }),
 
   getFriendRequests: protectedProcedure
     .input(z.object({ userId: z.string().min(1) }))
-    .query(({ input, ctx }) => {
+    .query(async ({ input, ctx }) => {
       if (ctx.userId !== input.userId) throw new TRPCError({ code: "FORBIDDEN" });
-      return storeApi.listFriendRequests(input.userId).map((request) => {
-        const fromUser = storeApi.getUser(request.fromUserId);
-        return {
-          id: request.id,
-          fromUserId: request.fromUserId,
-          fromName: fromUser?.name ?? "Unknown",
-          fromInviteCode: fromUser?.inviteCode ?? "",
-          createdAt: request.createdAt,
-        };
-      });
+      const requests = await storeApi.listFriendRequests(input.userId);
+      return await Promise.all(
+        requests.map(async (request) => {
+          const fromUser = await storeApi.getUser(request.fromUserId);
+          return {
+            id: request.id,
+            fromUserId: request.fromUserId,
+            fromName: fromUser?.name ?? "Unknown",
+            fromInviteCode: fromUser?.inviteCode ?? "",
+            createdAt: request.createdAt,
+          };
+        })
+      );
     }),
 
   acceptFriendRequest: protectedProcedure
     .input(z.object({ userId: z.string().min(1), requestId: z.string().min(1) }))
-    .mutation(({ input, ctx }) => {
+    .mutation(async ({ input, ctx }) => {
       if (ctx.userId !== input.userId) throw new TRPCError({ code: "FORBIDDEN" });
-      const request = storeApi.listFriendRequests(input.userId).find((item) => item.id === input.requestId);
+      const requests = await storeApi.listFriendRequests(input.userId);
+      const request = requests.find((item) => item.id === input.requestId);
       if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Request not found." });
-      storeApi.addFriendship(request.fromUserId, request.toUserId);
-      storeApi.removeFriendRequest(request.id);
+      
+      await storeApi.addFriendship(request.fromUserId, request.toUserId);
+      await storeApi.removeFriendRequest(request.id);
       return { status: "accepted" } as const;
     }),
 
   getCircleStats: protectedProcedure
     .input(z.object({ userId: z.string().min(1) }))
-    .query(({ input, ctx }) => {
+    .query(async ({ input, ctx }) => {
       if (ctx.userId !== input.userId) throw new TRPCError({ code: "FORBIDDEN" });
-      const friendIds = storeApi.listFriends(input.userId);
+      const friendIds = await storeApi.listFriends(input.userId);
       const ids = [input.userId, ...friendIds];
-      return ids
-        .map((id) => storeApi.getUser(id))
+      
+      const users = await Promise.all(ids.map(id => storeApi.getUser(id)));
+      
+      return users
         .filter((user): user is NonNullable<typeof user> => Boolean(user))
         .map((user) => ({
           userId: user.id,
           name: user.name,
           inviteCode: user.inviteCode,
           weeklyCompletion: user.weeklyCompletion,
-        }));
+          isPro: user.isPro,
+        }))
+        .sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
     }),
 
   createSubscriptionIntent: protectedProcedure
@@ -97,7 +125,6 @@ export const socialRouter = createTRPCRouter({
       const stripeSecret = process.env.STRIPE_SECRET_KEY;
       const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
 
-      // --- DEV / MISSING KEY FALLBACK ---
       if (!stripeSecret || !priceId) {
         console.warn("⚠️ Stripe key or Price ID missing — returning mock client secret");
         return {
@@ -109,15 +136,13 @@ export const socialRouter = createTRPCRouter({
 
       console.log("[social] Processing Stripe intent for user:", input.userId);
 
-      // 1. Fetch user from store
-      const user = storeApi.getUser(input.userId);
+      const user = await storeApi.getUser(input.userId);
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User must exist in database to create a subscription." });
       }
 
       let customerId = user.stripeCustomerId;
 
-      // 2. Create Stripe Customer ONLY if they don't have one
       if (!customerId) {
         console.log("[social] Creating new Stripe Customer...");
         const customerRes = await fetch("https://api.stripe.com/v1/customers", {
@@ -139,21 +164,17 @@ export const socialRouter = createTRPCRouter({
         
         customerId = customerData.id;
 
-        // Save the ID back to the user in the database so we reuse it next time!
-        storeApi.upsertUser({
+        await storeApi.upsertUser({
           ...user,
           stripeCustomerId: customerId,
         });
-      } else {
-        console.log("[social] Found existing Stripe Customer! Reusing:", customerId);
       }
 
-      // 3. Create Ephemeral Key (Required for mobile PaymentSheet)
       const ephemeralRes = await fetch("https://api.stripe.com/v1/ephemeral_keys", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${stripeSecret}`,
-          "Stripe-Version": "2023-10-16", // Ensure this matches your app's version
+          "Stripe-Version": "2023-10-16",
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
@@ -162,7 +183,6 @@ export const socialRouter = createTRPCRouter({
       });
       const ephemeralData = await ephemeralRes.json();
 
-      // 4. Create the Subscription
       const subRes = await fetch("https://api.stripe.com/v1/subscriptions", {
         method: "POST",
         headers: {
@@ -193,7 +213,6 @@ export const socialRouter = createTRPCRouter({
 
       console.log("✅ Subscription intent ready");
       
-      // 5. Return everything the mobile PaymentSheet needs
       return { 
         clientSecret,
         ephemeralKey: ephemeralData.secret,

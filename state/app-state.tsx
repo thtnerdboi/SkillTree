@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import createContextHook from "@nkzw/create-context-hook";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { trpc } from "../lib/trpc"; // Make sure to import your tRPC client!
 
 import {
   Challenge,
@@ -42,16 +43,26 @@ export type StoredState = {
   lastResetAt: number;
   isPro: boolean;
   lastAiGenTime: Record<string, number>;
-  prestigeDismissed: boolean; // Fix: Added flag to prevent prestige loop
+  prestigeDismissed: boolean;
 };
 
 const STORAGE_KEY = "arcstep-state-v6";
+
+// BUG 8 FIX: More robust invite codes
+const generateUniqueInviteCode = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `ARC-${result}`;
+};
 
 const createDefaultState = (): StoredState => ({
   isAuthed: false,
   userId: `usr_${Date.now()}_${Math.round(Math.random() * 10000)}`,
   displayName: "",
-  inviteCode: `ARC-${Math.floor(100000 + Math.random() * 900000)}`,
+  inviteCode: generateUniqueInviteCode(),
   onboardingComplete: false,
   onboardingAnswers: null,
   challengeProgress: {},
@@ -62,12 +73,14 @@ const createDefaultState = (): StoredState => ({
   lastResetAt: Date.now(),
   isPro: false,
   lastAiGenTime: {},
-  prestigeDismissed: false, // Fix: Default to false
+  prestigeDismissed: false,
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
   const [state, setState] = useState<StoredState>(createDefaultState());
   const [prestigeReady, setPrestigeReady] = useState<boolean>(false);
+
+  const upsertUser = trpc.social.upsertUser.useMutation();
 
   const storedQuery = useQuery({
     queryKey: ["arcstep-v5"],
@@ -85,6 +98,23 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     },
   });
 
+  // BUG 10 FIX: Check if they are Pro on the backend when the app loads
+  const userQuery = trpc.social.getUser.useQuery(
+    { userId: state.userId },
+    { enabled: state.isAuthed && !!state.userId }
+  );
+
+  useEffect(() => {
+    if (userQuery.data && userQuery.data.isPro !== state.isPro) {
+      console.log("[state] 🔄 Restoring Pro status from backend!");
+      setState(curr => {
+        const next = { ...curr, isPro: userQuery.data.isPro };
+        persistMutation.mutate(next);
+        return next;
+      });
+    }
+  }, [userQuery.data]);
+
   useEffect(() => {
     if (storedQuery.data) {
       console.log("[state] Hydrating app state");
@@ -99,7 +129,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         prestigeCount: storedQuery.data.prestigeCount ?? 0,
         isPro: storedQuery.data.isPro ?? false,
         lastAiGenTime: storedQuery.data.lastAiGenTime ?? {},
-        prestigeDismissed: storedQuery.data.prestigeDismissed ?? false, // Fix: Hydrate the dismissed flag
+        prestigeDismissed: storedQuery.data.prestigeDismissed ?? false,
       });
     }
   }, [storedQuery.data]);
@@ -144,7 +174,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
 
   const completeOnboarding = useCallback(
     (answers: OnboardingAnswers, challenges: Record<string, Challenge[]>) => {
-      console.log("[state] Complete onboarding with AI challenges for", Object.keys(challenges).length, "nodes");
+      console.log("[state] Complete onboarding");
       updateState((current) => ({
         ...current,
         onboardingComplete: true,
@@ -157,7 +187,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
 
   const toggleChallenge = useCallback(
     (challengeId: string, nodeId: string, challengeXp: number) => {
-      console.log("[state] Toggle challenge:", challengeId, "node:", nodeId);
       updateState((current) => {
         const wasCompleted = current.challengeProgress[challengeId] ?? false;
         const newProgress = {
@@ -166,11 +195,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         };
 
         let xpDelta = 0;
-        if (!wasCompleted) {
-          xpDelta += challengeXp;
-        } else {
-          xpDelta -= challengeXp;
-        }
+        if (!wasCompleted) xpDelta += challengeXp;
+        else xpDelta -= challengeXp;
 
         const node = SKILL_NODES.find((n) => n.id === nodeId);
         if (node) {
@@ -179,61 +205,36 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
               ? current.aiChallenges[nodeId]
               : node.defaultChallenges;
 
-          const wasNodeComplete = nodeChallenges.every(
-            (c) => current.challengeProgress[c.id]
-          );
-          const isNodeComplete = nodeChallenges.every(
-            (c) => newProgress[c.id]
-          );
+          const wasNodeComplete = nodeChallenges.every((c) => current.challengeProgress[c.id]);
+          const isNodeComplete = nodeChallenges.every((c) => newProgress[c.id]);
 
           if (!wasNodeComplete && isNodeComplete) {
             xpDelta += NODE_COMPLETION_XP[node.levelNumber] ?? 150;
-            console.log("[state] Node complete! Bonus XP:", NODE_COMPLETION_XP[node.levelNumber]);
-
             const levelNodes = getNodesForLevel(node.levelNumber);
             const wasLevelComplete = levelNodes.every((ln) => {
-              const lnChallenges =
-                (current.aiChallenges[ln.id] ?? []).length > 0
-                  ? current.aiChallenges[ln.id]
-                  : ln.defaultChallenges;
+              const lnChallenges = (current.aiChallenges[ln.id] ?? []).length > 0 ? current.aiChallenges[ln.id] : ln.defaultChallenges;
               return lnChallenges.every((c) => current.challengeProgress[c.id]);
             });
             const isLevelComplete = levelNodes.every((ln) => {
-              const lnChallenges =
-                (current.aiChallenges[ln.id] ?? []).length > 0
-                  ? current.aiChallenges[ln.id]
-                  : ln.defaultChallenges;
+              const lnChallenges = (current.aiChallenges[ln.id] ?? []).length > 0 ? current.aiChallenges[ln.id] : ln.defaultChallenges;
               return lnChallenges.every((c) => newProgress[c.id]);
             });
-
             if (!wasLevelComplete && isLevelComplete) {
               xpDelta += LEVEL_COMPLETION_XP[node.levelNumber] ?? 500;
-              console.log("[state] Level complete! Bonus XP:", LEVEL_COMPLETION_XP[node.levelNumber]);
             }
           } else if (wasNodeComplete && !isNodeComplete) {
             xpDelta -= NODE_COMPLETION_XP[node.levelNumber] ?? 150;
-            console.log("[state] Node uncompleted! Deducting XP:", NODE_COMPLETION_XP[node.levelNumber]);
-
-            // Fix: Check if unchecking this node also caused the Level to become incomplete
             const levelNodes = getNodesForLevel(node.levelNumber);
             const wasLevelComplete = levelNodes.every((ln) => {
-              const lnChallenges =
-                (current.aiChallenges[ln.id] ?? []).length > 0
-                  ? current.aiChallenges[ln.id]
-                  : ln.defaultChallenges;
+              const lnChallenges = (current.aiChallenges[ln.id] ?? []).length > 0 ? current.aiChallenges[ln.id] : ln.defaultChallenges;
               return lnChallenges.every((c) => current.challengeProgress[c.id]);
             });
             const isLevelComplete = levelNodes.every((ln) => {
-              const lnChallenges =
-                (current.aiChallenges[ln.id] ?? []).length > 0
-                  ? current.aiChallenges[ln.id]
-                  : ln.defaultChallenges;
+              const lnChallenges = (current.aiChallenges[ln.id] ?? []).length > 0 ? current.aiChallenges[ln.id] : ln.defaultChallenges;
               return lnChallenges.every((c) => newProgress[c.id]);
             });
-
             if (wasLevelComplete && !isLevelComplete) {
               xpDelta -= LEVEL_COMPLETION_XP[node.levelNumber] ?? 500;
-              console.log("[state] Level uncompleted! Deducting Bonus XP:", LEVEL_COMPLETION_XP[node.levelNumber]);
             }
           }
         }
@@ -254,7 +255,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
 
   const setAiChallenges = useCallback(
     (nodeId: string, challenges: Challenge[]) => {
-      console.log("[state] Set AI challenges for node:", nodeId);
       updateState((current) => ({
         ...current,
         aiChallenges: {
@@ -268,7 +268,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
 
   const addFriend = useCallback(
     (code: string, name: string, weeklyCompletion: number) => {
-      console.log("[state] Add friend:", name, code);
       updateState((current) => ({
         ...current,
         friends: [
@@ -286,7 +285,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   );
 
   const triggerPrestige = useCallback(() => {
-    console.log("[state] Prestige triggered! Count:", state.prestigeCount + 1);
     setPrestigeReady(false);
     updateState((current) => ({
       ...current,
@@ -294,7 +292,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       challengeProgress: {},
       aiChallenges: {},
       lastResetAt: Date.now(),
-      prestigeDismissed: false, // Fix: Reset the flag for the next prestige run
+      prestigeDismissed: false,
     }));
   }, [updateState, state.prestigeCount]);
 
@@ -302,20 +300,18 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     setPrestigeReady(false);
     updateState((current) => ({
       ...current,
-      prestigeDismissed: true, // Fix: Actually save that they dismissed it
+      prestigeDismissed: true,
     }));
   }, [updateState]);
 
   const addBonusXp = useCallback(
     (amount: number) => {
-      console.log("[state] Add bonus XP:", amount);
       updateState((current) => ({ ...current, xp: current.xp + amount }));
     },
     [updateState]
   );
 
   const recordAiGeneration = useCallback((domainId: string) => {
-    console.log(`[state] Recording AI generation time for: ${domainId}`);
     updateState((current) => ({
       ...current,
       lastAiGenTime: {
@@ -326,7 +322,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   }, [updateState]);
 
   const setPro = useCallback((status: boolean) => {
-    console.log(`[state] Updating Pro Status to: ${status}`);
     updateState((current) => ({ ...current, isPro: status }));
   }, [updateState]);
 
@@ -372,9 +367,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   }, [state.challengeProgress, state.aiChallenges]);
 
   useEffect(() => {
-    // Fix: Added !state.prestigeDismissed to stop the infinite loop
     if (isTreeComplete && state.onboardingComplete && !state.prestigeDismissed) {
-      console.log("[state] Tree complete! Prestige ready.");
       setPrestigeReady(true);
     }
   }, [isTreeComplete, state.onboardingComplete, state.prestigeDismissed]);
@@ -413,6 +406,27 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   const weeklyCompletion = totalChallenges > 0
     ? Math.round((completedChallenges / totalChallenges) * 100)
     : 0;
+
+  // BUG 7 FIX: Debounced Sync to Backend
+  const [lastSyncedCompletion, setLastSyncedCompletion] = useState(-1);
+
+  useEffect(() => {
+    if (!state.isAuthed || !state.onboardingComplete) return;
+    if (weeklyCompletion === lastSyncedCompletion) return;
+
+    const handler = setTimeout(() => {
+      console.log(`[state] 🔄 Syncing profile and ${weeklyCompletion}% completion to Supabase...`);
+      upsertUser.mutate({
+        userId: state.userId,
+        name: state.displayName || "Anonymous",
+        inviteCode: state.inviteCode,
+        weeklyCompletion: weeklyCompletion,
+      });
+      setLastSyncedCompletion(weeklyCompletion);
+    }, 1500);
+
+    return () => clearTimeout(handler);
+  }, [weeklyCompletion, state.isAuthed, state.onboardingComplete, state.userId, state.displayName, state.inviteCode]);
 
   const userLevel = getUserLevel(state.xp);
   const prestigeRank = getPrestigeRank(state.prestigeCount);

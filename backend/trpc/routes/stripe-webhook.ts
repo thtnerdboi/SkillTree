@@ -4,7 +4,7 @@ import { storeApi } from "../store"; // Adjust this path if your store.ts is som
 
 // Initialize Stripe (Make sure your test secret key is in your .env!)
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2023-10-16", 
+  apiVersion: "2026-02-25.clover", 
 });
 
 export const webhookRouter = new Hono();
@@ -33,11 +33,18 @@ webhookRouter.post("/stripe", async (c) => {
   // Handle the specific payment events
   switch (event.type) {
     case "invoice.payment_succeeded": {
-      const invoice = event.data.object as Stripe.Invoice;
+      const invoice = event.data.object;
       
       // We only care if this is a subscription payment
-      if (invoice.subscription) {
-        const customerId = invoice.customer as string;
+      // TypeScript workaround: Stripe Invoice may have subscription property at runtime
+      const subscriptionId = (invoice as any).subscription;
+      if (subscriptionId) {
+        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+        if (!customerId) {
+          console.warn(`⚠️ Invoice payment succeeded but no customer ID found`);
+          break;
+        }
+        
         console.log(`💰 Payment succeeded for Stripe Customer: ${customerId}`);
         
         // 1. Find the user in our database using the new function we added
@@ -45,23 +52,30 @@ webhookRouter.post("/stripe", async (c) => {
         
         if (user) {
           // 2. UPGRADE THEM TO PRO SECURELY!
-          storeApi.upsertUser({ ...user, isPro: true });
+          const updatedUser = storeApi.upsertUser({ ...user, isPro: true });
           console.log(`🚀 Success! User ${user.id} is now PRO!`);
         } else {
-          console.warn(`Error: Nobody in the database matches Stripe ID ${customerId}`);
+          console.warn(`⚠️ No user found with Stripe ID ${customerId} - payment received but unable to upgrade account`);
         }
       }
       break;
     }
     case "customer.subscription.deleted": {
       // If they cancel or their card declines for too long, downgrade them
-      const subscription = event.data.object as Stripe.Subscription;
-      const customerId = subscription.customer as string;
+      const subscription = event.data.object;
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+      
+      if (!customerId) {
+        console.warn(`⚠️ Subscription deleted but no customer ID found`);
+        break;
+      }
       
       const user = storeApi.findUserByStripeId(customerId);
       if (user) {
-        storeApi.upsertUser({ ...user, isPro: false });
+        const updatedUser = storeApi.upsertUser({ ...user, isPro: false });
         console.log(`📉 User ${user.id} downgraded from PRO.`);
+      } else {
+        console.warn(`⚠️ No user found with Stripe ID ${customerId} - unable to process subscription cancellation`);
       }
       break;
     }

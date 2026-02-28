@@ -199,7 +199,13 @@ export default function FriendsScreen() {
                     onPress={() => {
                       acceptRequest.mutate(
                         { userId: state.userId, requestId: request.id },
-                        { onSuccess: () => requestsQuery.refetch() }
+                        { 
+                          onSuccess: () => {
+                            // BUG 9 FIX: Refetch BOTH requests and circle instantly 
+                            requestsQuery.refetch();
+                            circleQuery.refetch();
+                          }
+                        }
                       );
                     }}
                     testID={`accept-${request.id}`}
