@@ -42,6 +42,7 @@ export type StoredState = {
   lastResetAt: number;
   isPro: boolean;
   lastAiGenTime: Record<string, number>;
+  prestigeDismissed: boolean; // Fix: Added flag to prevent prestige loop
 };
 
 const STORAGE_KEY = "arcstep-state-v6";
@@ -61,6 +62,7 @@ const createDefaultState = (): StoredState => ({
   lastResetAt: Date.now(),
   isPro: false,
   lastAiGenTime: {},
+  prestigeDismissed: false, // Fix: Default to false
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
@@ -97,6 +99,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         prestigeCount: storedQuery.data.prestigeCount ?? 0,
         isPro: storedQuery.data.isPro ?? false,
         lastAiGenTime: storedQuery.data.lastAiGenTime ?? {},
+        prestigeDismissed: storedQuery.data.prestigeDismissed ?? false, // Fix: Hydrate the dismissed flag
       });
     }
   }, [storedQuery.data]);
@@ -209,10 +212,32 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
             }
           } else if (wasNodeComplete && !isNodeComplete) {
             xpDelta -= NODE_COMPLETION_XP[node.levelNumber] ?? 150;
+            console.log("[state] Node uncompleted! Deducting XP:", NODE_COMPLETION_XP[node.levelNumber]);
+
+            // Fix: Check if unchecking this node also caused the Level to become incomplete
+            const levelNodes = getNodesForLevel(node.levelNumber);
+            const wasLevelComplete = levelNodes.every((ln) => {
+              const lnChallenges =
+                (current.aiChallenges[ln.id] ?? []).length > 0
+                  ? current.aiChallenges[ln.id]
+                  : ln.defaultChallenges;
+              return lnChallenges.every((c) => current.challengeProgress[c.id]);
+            });
+            const isLevelComplete = levelNodes.every((ln) => {
+              const lnChallenges =
+                (current.aiChallenges[ln.id] ?? []).length > 0
+                  ? current.aiChallenges[ln.id]
+                  : ln.defaultChallenges;
+              return lnChallenges.every((c) => newProgress[c.id]);
+            });
+
+            if (wasLevelComplete && !isLevelComplete) {
+              xpDelta -= LEVEL_COMPLETION_XP[node.levelNumber] ?? 500;
+              console.log("[state] Level uncompleted! Deducting Bonus XP:", LEVEL_COMPLETION_XP[node.levelNumber]);
+            }
           }
         }
 
-        // Apply Pro multiplier locally!
         if (current.isPro && xpDelta > 0) {
           xpDelta = Math.round(xpDelta * 1.5);
         }
@@ -269,12 +294,17 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       challengeProgress: {},
       aiChallenges: {},
       lastResetAt: Date.now(),
+      prestigeDismissed: false, // Fix: Reset the flag for the next prestige run
     }));
   }, [updateState, state.prestigeCount]);
 
   const dismissPrestige = useCallback(() => {
     setPrestigeReady(false);
-  }, []);
+    updateState((current) => ({
+      ...current,
+      prestigeDismissed: true, // Fix: Actually save that they dismissed it
+    }));
+  }, [updateState]);
 
   const addBonusXp = useCallback(
     (amount: number) => {
@@ -295,7 +325,6 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     }));
   }, [updateState]);
 
-  // FIX: renamed from updateProStatus -> setPro to match consumers (ProUpgradeModal etc.)
   const setPro = useCallback((status: boolean) => {
     console.log(`[state] Updating Pro Status to: ${status}`);
     updateState((current) => ({ ...current, isPro: status }));
@@ -343,11 +372,12 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   }, [state.challengeProgress, state.aiChallenges]);
 
   useEffect(() => {
-    if (isTreeComplete && state.onboardingComplete) {
+    // Fix: Added !state.prestigeDismissed to stop the infinite loop
+    if (isTreeComplete && state.onboardingComplete && !state.prestigeDismissed) {
       console.log("[state] Tree complete! Prestige ready.");
       setPrestigeReady(true);
     }
-  }, [isTreeComplete, state.onboardingComplete]);
+  }, [isTreeComplete, state.onboardingComplete, state.prestigeDismissed]);
 
   const completedChallenges = useMemo(() => {
     return SKILL_NODES.reduce((total, node) => {
@@ -413,7 +443,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     triggerPrestige,
     dismissPrestige,
     recordAiGeneration,
-    setPro, // FIX: was updateProStatus
+    setPro, 
     isNodeComplete,
     isNodeUnlocked,
     isLevelUnlocked,

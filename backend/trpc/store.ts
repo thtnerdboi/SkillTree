@@ -4,6 +4,8 @@ export type StoredUser = {
   inviteCode: string;
   weeklyCompletion: number;
   updatedAt: number;
+  stripeCustomerId?: string;
+  isPro: boolean; // 👈 New: Track their Pro status securely!
 };
 
 export type FriendRequest = {
@@ -40,14 +42,21 @@ export const storeApi = {
     if (existing && existing !== user.id) {
       throw new Error("Invite code already in use");
     }
-    store.users[user.id] = user;
+    // Default isPro to false if it's somehow missing
+    const userToSave = { ...user, isPro: user.isPro ?? false };
+    
+    store.users[user.id] = userToSave;
     store.inviteIndex[user.inviteCode] = user.id;
-    return user;
+    return userToSave;
   },
   getUser: (userId: string) => store.users[userId],
   findUserByInvite: (inviteCode: string) => {
     const id = store.inviteIndex[inviteCode];
     return id ? store.users[id] : undefined;
+  },
+  // 👈 New: The webhook needs to find users using only their Stripe ID
+  findUserByStripeId: (stripeCustomerId: string) => {
+    return Object.values(store.users).find((u) => u.stripeCustomerId === stripeCustomerId);
   },
   addFriendRequest: (fromUserId: string, toUserId: string) => {
     const id = `req_${Date.now()}_${Math.round(Math.random() * 1000)}`;

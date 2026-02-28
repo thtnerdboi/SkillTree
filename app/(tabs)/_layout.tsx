@@ -1,11 +1,12 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { TreePine, Users, User } from 'lucide-react-native';
+// Notice Trophy is imported here with the other icons!
+import { TreePine, Users, User, Trophy } from 'lucide-react-native'; 
 import Colors from '@/constants/colors';
-import { useSafeAreaInsets } from 'react-native-safe-area-context'; // 1. Import this
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
-  const insets = useSafeAreaInsets(); // 2. Get the phone's safe zone numbers
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -15,9 +16,7 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: '#0C1120',
           borderTopColor: '#1A2238',
-          // 3. Dynamic height: base height + the bottom bar size
           height: 60 + insets.bottom, 
-          // 4. Dynamic padding: push icons up exactly enough
           paddingBottom: insets.bottom > 0 ? insets.bottom : 8, 
           display: 'flex',
         },
@@ -37,6 +36,17 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Users size={24} color={color} />,
         }}
       />
+      
+      {/* 👇 Drop the Leaderboard right here 👇 */}
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: 'Rankings',
+          tabBarIcon: ({ color }) => <Trophy size={24} color={color} />,
+        }}
+      />
+      {/* 👆 ================================ 👆 */}
+
       <Tabs.Screen
         name="profile"
         options={{

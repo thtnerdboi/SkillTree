@@ -55,6 +55,7 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
+    "stripe": "^20.4.0",
     "superjson": "^2.2.6",
     "tsx": "^4.21.0",
     "zod": "^4.3.6",

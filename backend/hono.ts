@@ -4,11 +4,16 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 
 import { appRouter } from "./trpc/app-router";
+import { webhookRouter } from './trpc/routes/stripe-webhook';
 import { createContext } from "./trpc/create-context";
 
 const app = new Hono();
 
+// CORS should go at the very top so all routes are protected
 app.use("*", cors());
+
+// Webhook mounted securely before tRPC
+app.route('/api/webhooks', webhookRouter);
 
 // 🔥 FIX 1: Match the route to the endpoint perfectly
 app.use(
