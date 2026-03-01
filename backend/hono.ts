@@ -7,6 +7,9 @@ import { appRouter } from "./trpc/app-router";
 import { webhookRouter } from './trpc/routes/stripe-webhook';
 import { createContext } from "./trpc/create-context";
 
+import 'dotenv/config';
+import { trpcServer } from "@hono/trpc-server";
+
 const app = new Hono();
 
 // CORS is critical for Stripe/tRPC communication
