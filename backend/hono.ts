@@ -9,13 +9,11 @@ import { createContext } from "./trpc/create-context";
 
 const app = new Hono();
 
-// CORS should go at the very top so all routes are protected
+// CORS is critical for Stripe/tRPC communication
 app.use("*", cors());
 
-// Webhook mounted securely before tRPC
 app.route('/api/webhooks', webhookRouter);
 
-// 🔥 FIX 1: Match the route to the endpoint perfectly
 app.use(
   "/api/trpc/*", 
   trpcServer({
@@ -26,18 +24,19 @@ app.use(
 );
 
 app.get("/", (c) => {
-  return c.json({ status: "ok", message: "API is running" });
+  return c.json({ status: "ok", message: "SkillTree API is running" });
 });
 
-// 🔥 FIX 2: Let Render decide the port, fallback to 3000 for local
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-console.log(`Server is running on port ${port}`);
 
-// hostname "0.0.0.0" is correct! Leave it!
+// 🔥 This ensures the server is reachable by the emulator
 serve({
   fetch: app.fetch,
   port,
-  hostname: "0.0.0.0"
+  hostname: "0.0.0.0" 
+}, (info) => {
+  console.log(`\n🚀 SERVER LIVE: http://localhost:${info.port}`);
+  console.log(`📱 ANDROID EMULATOR REACHABLE AT: http://10.0.2.2:${info.port}/api/trpc\n`);
 });
 
 export default app;

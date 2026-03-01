@@ -3,12 +3,12 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "npx expo start",
-    "android": "npx expo run:android",
-    "ios": "npx expo run:ios",
-    "web": "npx expo start --web",
-    "lint": "expo lint",
-    "backend": "npx tsx backend/hono.ts"
+  "start": "npx expo start",
+  "android": "npx expo run:android",
+  "ios": "npx expo run:ios",
+  "web": "npx expo start --web",
+  "lint": "expo lint",
+  "backend": "npx tsx --env-file=.env backend/hono.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

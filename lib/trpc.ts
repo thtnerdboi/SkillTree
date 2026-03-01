@@ -1,34 +1,43 @@
-// lib/trpc.ts
-import { createTRPCReact } from '@trpc/react-query';
-import { httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '../backend/trpc/app-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { httpBatchLink } from "@trpc/client"; // Use httpBatchLink for better stability
+import { createTRPCReact } from "@trpc/react-query";
+import superjson from "superjson";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import type { AppRouter } from "@/backend/trpc/app-router";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-// Helper to get the userId from local storage to send to the server
-const getUserId = async () => {
-  try {
-    const saved = await AsyncStorage.getItem("arcstep-state-v6");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.userId;
-    }
-  } catch (e) {
-    return null;
-  }
-  return null;
+const getBaseUrl = () => {
+  // 1. If you defined an environment variable, use it
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+
+  // 2. Android Emulators need this special IP to talk to your computer's localhost
+  if (Platform.OS === "android") return "http://10.0.2.2:3000";
+
+  // 3. iOS / Web / Default
+  return "http://localhost:3000";
 };
 
 export const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: 'http://YOUR_LOCAL_IP_OR_RENDER_URL:3000/trpc', // Update this to your backend URL!
+      url: `${getBaseUrl()}/api/trpc`,
+      transformer: superjson,
+      // 🔥 BUG 10 FIX: Actually send the userId so protectedProcedures work
       async headers() {
-        const userId = await getUserId();
-        return {
-          authorization: userId ? `Bearer ${userId}` : '',
-        };
+        try {
+          const saved = await AsyncStorage.getItem("arcstep-state-v6");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            return {
+              authorization: `Bearer ${parsed.userId}`,
+            };
+          }
+        } catch (e) {
+          return {};
+        }
+        return {};
       },
     }),
   ],

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "SkillTree",
+    "name": "ArcStep's SkillTree",
     "slug": "skilltree-op8uvxx",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": "arcstep-skilltree",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,14 +15,15 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.skilltree-op8uvxx"
+      "bundleIdentifier": "com.arcstep.skilltree"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.skilltree_op8uvxx"
+      "package": "com.arcstep.skilltree",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -39,8 +40,8 @@
       [
         "react-native-google-mobile-ads",
         {
-          "androidAppId": "ca-app-pub-5851180331769845~8736324119"
-		  "iosAppId": "ca-app-pub-5851180331769845~2890404402"
+          "androidAppId": "ca-app-pub-5851180331769845~8736324119",
+          "iosAppId": "ca-app-pub-5851180331769845~2890404402"
         }
       ]
     ],
