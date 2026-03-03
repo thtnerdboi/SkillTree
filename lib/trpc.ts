@@ -27,6 +27,21 @@ const getBaseUrl = () => {
   return Platform.OS === "android" ? "http://10.0.2.2:3000" : RENDER_URL;
 };
 
+const getBaseUrl = () => {
+  // 1. If we are in a built APK (Production/Preview), use the Render URL
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  // 2. FALLBACK for local development only
+  if (__DEV__) {
+    return Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000";
+  }
+
+  // 3. Absolute fallback
+  return "https://skilltree-backend-rff0.onrender.com";
+};
+
 export const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
