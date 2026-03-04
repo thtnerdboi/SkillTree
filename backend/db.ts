@@ -1,22 +1,21 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./db/schema";
+import "dotenv/config"; // This is the key! It reads the .env file we just made on Render
 
-// 🕵️‍♂️ ULTRA DEBUG: Let's see exactly what's going on
 const env = process.env;
-const dbUrl = env.DATABASE_URL || env.DB_URL || env.POSTGRES_URL;
+// Check the environment variable first, then the .env file
+const dbUrl = env.DATABASE_URL;
 
-console.log("--- ENV DIAGNOSTICS ---");
-console.log("DATABASE_URL present?", !!env.DATABASE_URL);
-console.log("All Keys starting with 'DATA':", Object.keys(env).filter(k => k.startsWith('DATA')));
-console.log("-----------------------");
+console.log("--- 🚨 FINAL DIAGNOSTIC 🚨 ---");
+console.log("DATABASE_URL present in process.env?", !!dbUrl);
 
 if (!dbUrl) {
-  // We'll throw a more descriptive error this time
-  throw new Error(`CRITICAL: No connection string found. Keys detected: ${Object.keys(env).join(', ')}`);
+  // If we get here, it means both the env var and the .env file failed
+  throw new Error("CRITICAL: DATABASE_URL not found in env or .env file.");
 }
 
 const client = postgres(dbUrl, { prepare: false });
 export const db = drizzle(client, { schema });
 
-console.log("🐘 Database connection initialized!");
+console.log("🐘 Database connection initialized via Secret File!");
