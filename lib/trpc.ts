@@ -9,37 +9,23 @@ import type { AppRouter } from "@/backend/trpc/app-router";
 export const trpc = createTRPCReact<AppRouter>();
 
 const getBaseUrl = () => {
-  // 1. YOUR LIVE RENDER URL (Priority #1)
-  // Replace this string with your actual Render URL if it differs
   const RENDER_URL = "https://skilltree-backend-rff0.onrender.com";
 
-  // 2. Logic to choose the URL
-  // If we are in a production build, ALWAYS use Render
-  if (!__DEV__) {
-    return RENDER_URL;
-  }
-
-  // 3. If in Development, try local fallbacks
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  
-  // Use Render even in Dev if you want to test against the live DB, 
-  // otherwise use the emulator IP
-  return Platform.OS === "android" ? "http://10.0.2.2:3000" : RENDER_URL;
-};
-
-const getBaseUrl = () => {
-  // 1. If we are in a built APK (Production/Preview), use the Render URL
+  // 1. If we are in a built APK (via EAS), use the baked-in Environment Variable
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  // 2. FALLBACK for local development only
-  if (__DEV__) {
-    return Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000";
+  // 2. If we are NOT in development mode (Production Build), use Render
+  if (!__DEV__) {
+    return RENDER_URL;
   }
 
-  // 3. Absolute fallback
-  return "https://skilltree-backend-rff0.onrender.com";
+  // 3. DEVELOPMENT MODE ONLY: Localhost/Emulator Fallbacks
+  // Android emulators need 10.0.2.2 to see your computer's local port 3000
+  return Platform.OS === "android" 
+    ? "http://10.0.2.2:3000" 
+    : "http://localhost:3000";
 };
 
 export const trpcClient = trpc.createClient({
