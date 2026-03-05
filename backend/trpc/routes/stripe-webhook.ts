@@ -1,69 +1,79 @@
 import { Hono } from "hono";
 import Stripe from "stripe";
-import { storeApi } from "../store";
+import { eq } from "drizzle-orm";
+import { db } from "../../db"; 
+import { users } from "../../db/schema"; 
 
-export const webhookRouter = new Hono();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2023-10-16",
+});
 
-// Helper to get Stripe instance safely
-const getStripe = () => {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
-    throw new Error("STRIPE_SECRET_KEY is missing from environment variables");
-  }
-  return new Stripe(key, { apiVersion: "2023-10-16" });
-};
+// We export a standalone Hono router for the webhook
+export const stripeWebhookRouter = new Hono();
 
-webhookRouter.post("/stripe", async (c) => {
-  const sig = c.req.header("stripe-signature");
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  if (!sig || !endpointSecret) {
-    console.error("⚠️ Webhook secret or signature missing.");
-    return c.text("Webhook Error", 400);
+stripeWebhookRouter.post("/", async (c) => {
+  const signature = c.req.header("stripe-signature");
+  
+  if (!signature) {
+    return c.json({ error: "Missing stripe-signature header" }, 400);
   }
 
-  const stripe = getStripe();
+  // 🔥 Get the raw text body BEFORE anything tries to parse it into JSON
+  const rawBody = await c.req.text();
   let event: Stripe.Event;
 
   try {
-    const rawBody = await c.req.text();
-    event = stripe.webhooks.constructEvent(rawBody, sig, endpointSecret);
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET! 
+    );
   } catch (err: any) {
-    console.error(`⚠️ Webhook signature verification failed:`, err.message);
-    return c.text(`Webhook Error: ${err.message}`, 400);
+    console.error(`❌ Webhook signature verification failed: ${err.message}`);
+    return c.json({ error: err.message }, 400);
   }
 
-  // Handle the specific payment events
-  switch (event.type) {
-    case "invoice.payment_succeeded": {
+  try {
+    if (event.type === "invoice.payment_succeeded") {
       const invoice = event.data.object as Stripe.Invoice;
-      if (invoice.subscription) {
-        const customerId = invoice.customer as string;
-        
-        // 🔥 FIX: Must use await for Supabase/Drizzle
-        const user = await storeApi.findUserByStripeId(customerId);
-        
-        if (user) {
-          await storeApi.upsertUser({ ...user, isPro: true });
-          console.log(`🚀 Success! User ${user.id} is now PRO!`);
-        } else {
-          console.warn(`Error: No user matches Stripe ID ${customerId}`);
-        }
+      const customerId = invoice.customer as string;
+
+      const customer = await stripe.customers.retrieve(customerId);
+      
+      if (!customer.deleted && customer.metadata?.userId) {
+        const userId = customer.metadata.userId;
+
+        // Upgrade the user to Pro in Supabase
+        await db.update(users)
+          .set({ isPro: true })
+          .where(eq(users.id, userId));
+
+        console.log(`✅ [Webhook] Success: User ${userId} is now PRO`);
       }
-      break;
     }
-    case "customer.subscription.deleted": {
+
+    if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object as Stripe.Subscription;
       const customerId = subscription.customer as string;
       
-      const user = await storeApi.findUserByStripeId(customerId);
-      if (user) {
-        await storeApi.upsertUser({ ...user, isPro: false });
-        console.log(`📉 User ${user.id} downgraded from PRO.`);
-      }
-      break;
-    }
-  }
+      const customer = await stripe.customers.retrieve(customerId);
+      
+      if (!customer.deleted && customer.metadata?.userId) {
+        const userId = customer.metadata.userId;
 
-  return c.text("Received", 200);
+        // Downgrade the user if they cancel
+        await db.update(users)
+          .set({ isPro: false })
+          .where(eq(users.id, userId));
+
+        console.log(`🔻 [Webhook] Cancelled: User ${userId} is now FREE`);
+      }
+    }
+
+    return c.json({ received: true });
+    
+  } catch (error) {
+    console.error("❌ Error processing webhook event:", error);
+    return c.json({ error: "Webhook handler failed" }, 500);
+  }
 });

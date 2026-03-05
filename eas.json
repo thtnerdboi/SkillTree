@@ -10,6 +10,8 @@
     },
     "preview": {
       "distribution": "internal",
+      "developmentClient": false,
+      "channel": "preview",
       "android": {
         "buildType": "apk"
       },
@@ -19,6 +21,8 @@
     },
     "production": {
       "autoIncrement": true,
+      "developmentClient": false,
+      "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com"
       }

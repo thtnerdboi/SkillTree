@@ -8,20 +8,14 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
 import Constants from "expo-constants";
-import {
-  Check,
-  Crown,
-  Shield,
-  X,
-  Zap,
-} from "lucide-react-native";
-import { useMutation } from "@tanstack/react-query";
+import { Check, Crown, Shield, X, Zap } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { useAppState } from "@/state/app-state";
 import { trpc } from "@/lib/trpc";
-import { useStripePayment } from "@/lib/stripe";
+import { useStripe } from "@stripe/stripe-react-native";
 
 type Props = {
   visible: boolean;
@@ -31,112 +25,130 @@ type Props = {
 const PERKS = [
   { icon: Zap, color: "#FFD700", text: "1.5× XP on every challenge & reward" },
   { icon: Shield, color: "#3DFF8E", text: "Completely ad-free experience" },
-  { icon: Crown, color: "#A78BFA", text: "Priority challenge personalization" },
+  { icon: Crown, color: "#A78BFA", text: "Priority AI challenge personalization" },
 ];
 
 export function ProUpgradeModal({ visible, onClose }: Props) {
   const { state, setPro } = useAppState();
-  const { initPaymentSheet, presentPaymentSheet } = useStripePayment();
-  const [successVisible, setSuccessVisible] = useState<boolean>(false);
-  const isExpoGo = Constants.appOwnership === "expo";
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [successVisible, setSuccessVisible] = useState(false);
+  
+  // 🔥 FIX 2: Store the intent so we don't spam the backend on re-clicks
+  const [activeClientSecret, setActiveClientSecret] = useState<string | null>(null);
 
-  const scaleAnim = useRef(new Animated.Value(0.88)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const crownAnim = useRef(new Animated.Value(1)).current;
+
+  const createIntent = trpc.social.createSubscriptionIntent.useMutation();
 
   useEffect(() => {
     if (visible) {
       setSuccessVisible(false);
       Animated.parallel([
-        Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 70, friction: 12 }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 12 }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
-      const loop = Animated.loop(
+      
+      const pulse = Animated.loop(
         Animated.sequence([
-          Animated.timing(crownAnim, { toValue: 1.12, duration: 800, useNativeDriver: true }),
-          Animated.timing(crownAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+          Animated.timing(crownAnim, { toValue: 1.1, duration: 1000, useNativeDriver: true }),
+          Animated.timing(crownAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
         ])
       );
-      loop.start();
-      return () => loop.stop();
+      pulse.start();
+      return () => pulse.stop();
     } else {
-      scaleAnim.setValue(0.88);
-      opacityAnim.setValue(0);
+      // Reset state when hiding so it's fresh next time
+      setActiveClientSecret(null);
     }
-  }, [visible, scaleAnim, opacityAnim, crownAnim]);
+  }, [visible]);
 
-  const createIntentMutation = trpc.social.createSubscriptionIntent.useMutation();
+  // 🔥 FIX 1: Smooth Exit Animation
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(scaleAnim, { toValue: 0.9, duration: 200, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      onClose(); // Actually unmount the modal after the animation finishes
+    });
+  };
 
-  const subscribeMutation = useMutation({
-    mutationFn: async () => {
-      if (isExpoGo) {
-        throw new Error(
-          "Stripe payments are not supported in Expo Go. Use an EAS development build or a release build to test Pro checkout."
-        );
+  const handleSubscribe = async () => {
+    if (Constants.appOwnership === "expo") {
+      return Alert.alert("Expo Go Limited", "Stripe requires a development build (APK) to test payments.");
+    }
+
+    setIsProcessing(true);
+    try {
+      let secretToUse = activeClientSecret;
+
+      // Only fetch a new intent from backend if we don't already have one ready
+      if (!secretToUse) {
+        const { clientSecret, customer } = await createIntent.mutateAsync({ userId: state.userId });
+        secretToUse = clientSecret;
+        setActiveClientSecret(clientSecret);
+
+        const { error: initError } = await initPaymentSheet({
+          merchantDisplayName: "SkillTree",
+          paymentIntentClientSecret: clientSecret,
+          customerId: customer,
+          allowsDelayedPaymentMethods: true,
+          appearance: {
+            colors: { primary: "#FFD700" },
+            shapes: { borderRadius: 16 },
+          },
+        });
+
+        if (initError) throw new Error(initError.message);
       }
 
-      console.log("[pro] Initiating £5.99/mo subscription");
-      const { clientSecret } = await createIntentMutation.mutateAsync({
-        userId: state.userId,
-      });
-      await initPaymentSheet({
-        clientSecret,
-        merchantDisplayName: "SkillTree",
-      });
-      const result = await presentPaymentSheet();
-      if (result.error) {
-        throw new Error(result.error.message);
+      // Show Sheet
+      const { error: presentError } = await presentPaymentSheet();
+      
+      if (presentError) {
+        // User cancelled or card failed. We don't throw, we just let them try again.
+        if (presentError.code !== "Canceled") {
+           throw new Error(presentError.message);
+        }
+        return; // Exit silently if they just closed the sheet
       }
-    },
-    onSuccess: () => {
-      console.log("[pro] Subscription successful — activating Pro");
+
+      // Handle Success
       setSuccessVisible(true);
       setTimeout(() => {
         setPro(true);
-        onClose();
-      }, 1800);
-    },
-    onError: (err) => {
-      console.error("[pro] Subscription error:", err);
-      Alert.alert("Unable to start checkout", err.message);
-    },
-  });
+        handleClose(); // Use the smooth close here
+      }, 2000);
+      
+    } catch (err: any) {
+      Alert.alert("Payment Error", err.message || "An unexpected error occurred.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   if (!visible) return null;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <Pressable style={styles.backdrop} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
+      <Pressable style={styles.backdrop} onPress={handleClose} />
       <View style={styles.centeredView} pointerEvents="box-none">
-        <Animated.View
-          style={[
-            styles.card,
-            { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
-          ]}
-        >
+        <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }], opacity: opacityAnim }]}>
           {successVisible ? (
             <View style={styles.successContainer}>
-              <View style={styles.successOrb}>
-                <Check size={36} color="#FFD700" strokeWidth={2.5} />
-              </View>
+              <View style={styles.successOrb}><Check size={36} color="#FFD700" strokeWidth={3} /></View>
               <Text style={styles.successTitle}>You're Pro!</Text>
-              <Text style={styles.successSub}>1.5× XP is now active. Enjoy the journey.</Text>
+              <Text style={styles.successSub}>1.5× XP is now active. Enjoy your journey.</Text>
             </View>
           ) : (
             <>
-              <Pressable style={styles.closeBtn} onPress={onClose} testID="pro-modal-close">
-                <X size={14} color={Colors.light.muted} strokeWidth={2} />
-              </Pressable>
-
+              <TouchableOpacity style={styles.closeBtn} onPress={handleClose}><X size={16} color={Colors.light.muted} /></TouchableOpacity>
+              
               <View style={styles.topSection}>
                 <Animated.View style={[styles.crownOrb, { transform: [{ scale: crownAnim }] }]}>
-                  <Crown size={30} color="#FFD700" strokeWidth={1.8} />
+                  <Crown size={32} color="#FFD700" strokeWidth={2} />
                 </Animated.View>
                 <Text style={styles.title}>SkillTree Pro</Text>
                 <Text style={styles.subtitle}>Unlock your full potential</Text>
@@ -144,53 +156,31 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
 
               <View style={styles.priceRow}>
                 <Text style={styles.priceAmount}>£5.99</Text>
-                <View>
-                  <Text style={styles.pricePeriod}>/ month</Text>
-                  <Text style={styles.priceCancel}>Cancel anytime</Text>
-                </View>
+                <View><Text style={styles.pricePeriod}>/ month</Text><Text style={styles.priceCancel}>Cancel anytime</Text></View>
               </View>
-
-              <View style={styles.divider} />
 
               <View style={styles.perksSection}>
                 {PERKS.map(({ icon: Icon, color, text }) => (
                   <View key={text} style={styles.perkRow}>
-                    <View style={[styles.perkIconWrap, { backgroundColor: `${color}18`, borderColor: `${color}30` }]}>
-                      <Icon size={14} color={color} strokeWidth={2} />
-                    </View>
+                    <View style={[styles.perkIconWrap, { backgroundColor: `${color}15`, borderColor: `${color}30` }]}><Icon size={14} color={color} /></View>
                     <Text style={styles.perkText}>{text}</Text>
                   </View>
                 ))}
               </View>
 
-              {subscribeMutation.isError && (
-                <Text style={styles.errorText}>Payment failed. Please try again.</Text>
-              )}
-
-              <TouchableOpacity
-                style={[styles.subscribeBtn, subscribeMutation.isPending && styles.subscribeBtnDisabled]}
-                onPress={() => subscribeMutation.mutate()}
-                disabled={subscribeMutation.isPending}
-                testID="subscribe-btn"
+              <TouchableOpacity 
+                style={[styles.subscribeBtn, isProcessing && styles.disabledBtn]} 
+                onPress={handleSubscribe} 
+                disabled={isProcessing}
               >
-                {subscribeMutation.isPending ? (
-                  <Text style={styles.subscribeBtnText}>Processing...</Text>
-                ) : (
+                {isProcessing ? <ActivityIndicator color="#060810" /> : (
                   <>
-                    <Crown size={16} color="#060810" strokeWidth={2.5} />
-                    <Text style={styles.subscribeBtnText}>Subscribe for £5.99/mo</Text>
+                    <Crown size={18} color="#060810" strokeWidth={2.5} />
+                    <Text style={styles.subscribeBtnText}>Subscribe Now</Text>
                   </>
                 )}
               </TouchableOpacity>
-
-              <Text style={styles.legal}>
-                Billed monthly. Secure payment via Stripe.
-              </Text>
-              {isExpoGo && (
-                <Text style={styles.errorText}>
-                  Stripe checkout cannot run inside Expo Go. Use a development build to test Pro.
-                </Text>
-              )}
+              <Text style={styles.legal}>Billed monthly. Secure payment via Stripe.</Text>
             </>
           )}
         </Animated.View>
@@ -199,184 +189,50 @@ export function ProUpgradeModal({ visible, onClose }: Props) {
   );
 }
 
+// ... keep all your existing styles exactly as they were ...
 const styles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.72)",
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.8)" },
+  centeredView: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
+  card: { 
+    width: "100%", 
+    backgroundColor: "#0C1120", 
+    borderRadius: 32, 
+    padding: 24, 
+    borderWidth: 1.5, 
+    borderColor: "#FFD70025", 
+    elevation: 20, 
+    overflow: "hidden", 
+    gap: 20 
   },
-  centeredView: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 22,
+  closeBtn: { position: "absolute", top: 20, right: 20, padding: 8, zIndex: 10 },
+  topSection: { alignItems: "center", gap: 10 },
+  crownOrb: { 
+    width: 80, height: 80, borderRadius: 40, 
+    backgroundColor: "#111828", 
+    borderWidth: 1.5, borderColor: "#FFD70040", 
+    alignItems: "center", justifyContent: "center",
+    elevation: 10 
   },
-  card: {
-    width: "100%",
-    backgroundColor: "#0C1120",
-    borderRadius: 30,
-    padding: 28,
-    borderWidth: 1.5,
-    borderColor: "#FFD70030",
-    shadowColor: "#FFD700",
-    shadowOpacity: 0.15,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 20,
-    gap: 20,
+  title: { fontSize: 28, fontWeight: "900", color: "#FFF" },
+  subtitle: { fontSize: 14, color: Colors.light.muted },
+  priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
+  priceAmount: { fontSize: 48, fontWeight: "900", color: "#FFD700" },
+  pricePeriod: { fontSize: 16, fontWeight: "700", color: "#FFF" },
+  priceCancel: { fontSize: 11, color: Colors.light.muted },
+  perksSection: { gap: 14, marginVertical: 10 },
+  perkRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  perkIconWrap: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  perkText: { fontSize: 14, color: "#E2E8F0", flex: 1, lineHeight: 20 },
+  subscribeBtn: { 
+    backgroundColor: "#FFD700", borderRadius: 18, paddingVertical: 16, 
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    elevation: 8 
   },
-  closeBtn: {
-    position: "absolute",
-    top: 18,
-    right: 18,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#111828",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
-  },
-  topSection: {
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 8,
-  },
-  crownOrb: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#FFD70012",
-    borderWidth: 1.5,
-    borderColor: "#FFD70040",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#FFD700",
-    shadowOpacity: 0.3,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: Colors.light.text,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.light.muted,
-    fontWeight: "500",
-  },
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  priceAmount: {
-    fontSize: 48,
-    fontWeight: "900",
-    color: "#FFD700",
-    lineHeight: 52,
-  },
-  pricePeriod: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  priceCancel: {
-    fontSize: 11,
-    color: Colors.light.muted,
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#1A2238",
-  },
-  perksSection: {
-    gap: 12,
-  },
-  perkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  perkIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    flexShrink: 0,
-  },
-  perkText: {
-    fontSize: 14,
-    color: Colors.light.text,
-    fontWeight: "500",
-    flex: 1,
-    lineHeight: 20,
-  },
-  errorText: {
-    fontSize: 13,
-    color: "#FF6A4D",
-    textAlign: "center",
-    fontWeight: "600",
-  },
-  subscribeBtn: {
-    backgroundColor: "#FFD700",
-    borderRadius: 16,
-    paddingVertical: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    shadowColor: "#FFD700",
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  subscribeBtnDisabled: {
-    opacity: 0.6,
-  },
-  subscribeBtnText: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#060810",
-    letterSpacing: 0.2,
-  },
-  legal: {
-    fontSize: 11,
-    color: "#2A3560",
-    textAlign: "center",
-    fontWeight: "500",
-  },
-  successContainer: {
-    alignItems: "center",
-    paddingVertical: 20,
-    gap: 14,
-  },
-  successOrb: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#FFD70012",
-    borderWidth: 1.5,
-    borderColor: "#FFD70050",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  successTitle: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#FFD700",
-  },
-  successSub: {
-    fontSize: 14,
-    color: Colors.light.muted,
-    textAlign: "center",
-    fontWeight: "500",
-    lineHeight: 22,
-  },
+  disabledBtn: { opacity: 0.6 },
+  subscribeBtnText: { fontSize: 16, fontWeight: "900", color: "#060810" },
+  legal: { fontSize: 11, color: "#475569", textAlign: "center" },
+  successContainer: { alignItems: "center", paddingVertical: 30, gap: 16 },
+  successOrb: { width: 88, height: 88, borderRadius: 44, backgroundColor: "#111828", borderWidth: 2, borderColor: "#FFD70050", alignItems: "center", justifyContent: "center" },
+  successTitle: { fontSize: 32, fontWeight: "900", color: "#FFD700" },
+  successSub: { fontSize: 15, color: Colors.light.muted, textAlign: "center", lineHeight: 22 },
 });
