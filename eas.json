@@ -16,7 +16,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51T3ZSBRoR71UBeoKZX7ofabpfL6Vok8VXP0A0UyKaHaIi2fnBbbwdNEbFtFr1NhGAmQd9QlLt2tQ5xGiCPYfDV9d00JUsxKvpG"
       }
     },
     "production": {
