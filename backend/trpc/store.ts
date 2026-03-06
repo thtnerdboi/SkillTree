@@ -12,6 +12,10 @@ export const storeApi = {
       .limit(1);
     return result[0] || null;
   },
+  
+  async getUser(id:string) {
+    return this.findUser(id);
+  },
 
   // 2. Find a user specifically by Stripe Customer ID (for webhooks)
   async findUserByStripeId(stripeId: string) {
