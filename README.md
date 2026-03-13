@@ -20,5 +20,10 @@ Users can upgrade to the Pro tier to supercharge their growth:
 - OpenAI API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
 
+## ☕ Buy me a Coffee
+I am solo vibecoding this so it will take time, if you want to support me you can buy me a coffee with the link below
+https://buymeacoffee.com/thtnerdboi
+
 ---
 *For support or inquiries, please refer to our Terms of Service and Privacy Policy.*
+
