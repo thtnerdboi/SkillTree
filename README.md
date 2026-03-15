@@ -22,7 +22,7 @@ Users can upgrade to the Pro tier to supercharge their growth:
 - React Native & Expo
 - Stripe React Native SDK (Payments)
 - Google Mobile Ads (Monetization)
-- OpenAI API (Dynamic Challenge Generation)
+- Google Gemini API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
 
 ## ☕ Buy me a Coffee
