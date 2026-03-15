@@ -1,13 +1,12 @@
-import { publicProcedure, router } from "../create-context"; 
+import { publicProcedure, createTRPCRouter } from "../create-context"; // Corrected import name
 import { z } from "zod";
 import Stripe from "stripe";
-// ... rest of file
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2023-10-16",
 });
 
-export const stripeRouter = router({
+export const stripeRouter = createTRPCRouter({ // Corrected function name
   createPaymentSheet: publicProcedure
     .input(z.object({ userId: z.string() }))
     .mutation(async ({ input }) => {
