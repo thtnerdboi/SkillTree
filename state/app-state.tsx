@@ -1,21 +1,29 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import createContextHook from "@nkzw/create-context-hook";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { trpc } from "../lib/trpc"; 
-
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { trpc, setTrpcAuthHeaders, clearTrpcAuthHeaders } from "../lib/trpc";
+import { analytics } from "../utils/analytics";
+import { ANALYTICS_EVENTS } from "../utils/event-types";
+import {
+  computeToggleXpDelta,
+  computeCompletedChallenges,
+  computeTotalChallenges,
+  computeWeeklyCompletion,
+  isNodeDone,
+  isTreeDone,
+  getUserLevelFromXp,
+} from "../utils/xp-calculator";
 import {
   Challenge,
-  LEVEL_COMPLETION_XP,
-  NODE_COMPLETION_XP,
   SKILL_NODES,
   TREE_LEVELS,
-  getUserLevel,
-  getPrestigeRank,
   getNodesForLevel,
+  getPrestigeRank,
+  getPrestigeXpMultiplier,
 } from "../mocks/mvp-data";
 
-// --- Types ---
 export type OnboardingAnswers = {
   body: string;
   mind: string;
@@ -43,27 +51,17 @@ export type StoredState = {
   friends: Friend[];
   lastResetAt: number;
   isPro: boolean;
-  lastAiGenTime: Record<string, number>;
-  prestigeDismissed: boolean;
+  aiGenerations: number;
 };
 
-const STORAGE_KEY = "arcstep-state-v6";
-
-// --- Helpers ---
-const generateUniqueInviteCode = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `ARC-${result}`;
-};
+const STORAGE_KEY = "skilltree-state-v1";
+const AUTH_SESSION_KEY = "skilltree-auth-v1";
 
 const createDefaultState = (): StoredState => ({
   isAuthed: false,
   userId: `usr_${Date.now()}_${Math.round(Math.random() * 10000)}`,
   displayName: "",
-  inviteCode: generateUniqueInviteCode(),
+  inviteCode: `ARC-${Math.floor(100000 + Math.random() * 900000)}`,
   onboardingComplete: false,
   onboardingAnswers: null,
   challengeProgress: {},
@@ -73,23 +71,38 @@ const createDefaultState = (): StoredState => ({
   friends: [],
   lastResetAt: Date.now(),
   isPro: false,
-  lastAiGenTime: {},
-  prestigeDismissed: false,
+  aiGenerations: 0,
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
   const [state, setState] = useState<StoredState>(createDefaultState());
   const [prestigeReady, setPrestigeReady] = useState<boolean>(false);
-  const [lastSyncedCompletion, setLastSyncedCompletion] = useState(-1);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // --- API / Persistence ---
-  const upsertUser = trpc.social.upsertUser.useMutation();
+  const upsertUserMutation = trpc.social.upsertUser.useMutation({
+    onSuccess: () => console.log("[state] User synced to backend"),
+    onError: (e) => console.log("[state] Backend sync failed:", e.message),
+  });
 
   const storedQuery = useQuery({
-    queryKey: ["arcstep-v5"],
+    queryKey: ["skilltree-v1"],
     queryFn: async () => {
+      console.log("[state] Loading app state from storage");
       const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      return stored ? (JSON.parse(stored) as StoredState) : null;
+      const parsedState = stored ? (JSON.parse(stored) as StoredState) : null;
+      if (!parsedState?.userId || !parsedState?.isAuthed) {
+        try {
+          const authJson = await SecureStore.getItemAsync(AUTH_SESSION_KEY);
+          if (authJson) {
+            const auth = JSON.parse(authJson) as Partial<StoredState>;
+            console.log("[state] Restored auth session from SecureStore, userId:", auth.userId);
+            return { ...createDefaultState(), ...auth } as StoredState;
+          }
+        } catch (err) {
+          console.log("[state] SecureStore read failed:", err);
+        }
+      }
+      return parsedState;
     },
   });
 
@@ -98,24 +111,32 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
       return nextState;
     },
+    onError: (e) => console.error("[state] Persist failed:", e),
   });
-
-  // Sync Pro status from backend automatically
-  const userQuery = trpc.social.getUser.useQuery(
-    { userId: state.userId },
-    { enabled: state.isAuthed && !!state.userId }
-  );
-
-  useEffect(() => {
-    if (userQuery.data && userQuery.data.isPro !== state.isPro) {
-      updateState(curr => ({ ...curr, isPro: userQuery.data.isPro }));
-    }
-  }, [userQuery.data]);
 
   useEffect(() => {
     if (storedQuery.data) {
+      console.log("[state] Hydrating app state");
       const base = createDefaultState();
-      setState({ ...base, ...storedQuery.data });
+      const hydrated: StoredState = {
+        ...base,
+        ...storedQuery.data,
+        challengeProgress: storedQuery.data.challengeProgress ?? {},
+        aiChallenges: storedQuery.data.aiChallenges ?? {},
+        friends: storedQuery.data.friends ?? [],
+        xp: storedQuery.data.xp ?? 0,
+        prestigeCount: storedQuery.data.prestigeCount ?? 0,
+        isPro: storedQuery.data.isPro ?? false,
+        aiGenerations: storedQuery.data.aiGenerations ?? 0,
+      };
+      setState(hydrated);
+      if (hydrated.isAuthed && hydrated.userId) {
+        setTrpcAuthHeaders(hydrated.userId, hydrated.inviteCode);
+        analytics.identify(hydrated.userId, {
+          name: hydrated.displayName,
+          prestigeCount: hydrated.prestigeCount,
+        });
+      }
     }
   }, [storedQuery.data]);
 
@@ -124,199 +145,370 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       setState((current) => {
         const next = updater(current);
         persistMutation.mutate(next);
+        if (next.isAuthed && next.userId && next.inviteCode) {
+          const authData = JSON.stringify({
+            isAuthed: next.isAuthed,
+            userId: next.userId,
+            inviteCode: next.inviteCode,
+            displayName: next.displayName,
+          });
+          SecureStore.setItemAsync(AUTH_SESSION_KEY, authData).catch(
+            (e) => console.log("[state] SecureStore write failed:", e)
+          );
+          setTrpcAuthHeaders(next.userId, next.inviteCode);
+        }
         return next;
       });
     },
     [persistMutation]
   );
 
-  // --- Core Actions ---
-  const signIn = useCallback((name: string) => {
-    updateState((current) => {
-      const next = { ...current, isAuthed: true, displayName: name };
-      // BUG 6 FIX: Immediate sync on sign in
-      upsertUser.mutate({
-        userId: next.userId,
-        name: next.displayName,
-        inviteCode: next.inviteCode,
-        weeklyCompletion: 0,
-      });
-      return next;
-    });
-  }, [updateState, upsertUser]);
+  const signIn = useCallback(
+    (name: string) => {
+      console.log("[state] Sign in:", name);
+      updateState((current) => ({
+        ...current,
+        isAuthed: true,
+        displayName: name,
+      }));
+      analytics.track(ANALYTICS_EVENTS.SIGN_IN, { name });
+    },
+    [updateState]
+  );
 
   const signOut = useCallback(() => {
+    console.log("[state] Sign out");
+    analytics.track(ANALYTICS_EVENTS.SIGN_OUT);
+    analytics.reset();
+    clearTrpcAuthHeaders();
     const fresh = createDefaultState();
     setState(fresh);
     persistMutation.mutate(fresh);
+    SecureStore.deleteItemAsync(AUTH_SESSION_KEY).catch(() => {});
   }, [persistMutation]);
 
-  const updateDisplayName = useCallback((name: string) => {
-    updateState((current) => ({ ...current, displayName: name }));
-  }, [updateState]);
+  const updateDisplayName = useCallback(
+    (name: string) => {
+      console.log("[state] Update display name:", name);
+      updateState((current) => ({ ...current, displayName: name }));
+    },
+    [updateState]
+  );
 
-  const completeOnboarding = useCallback((answers: OnboardingAnswers, challenges: Record<string, Challenge[]>) => {
-    updateState((current) => {
-      const next = {
+  const completeOnboarding = useCallback(
+    (answers: OnboardingAnswers, challenges: Record<string, Challenge[]>) => {
+      console.log("[state] Complete onboarding with AI challenges for", Object.keys(challenges).length, "nodes");
+      updateState((current) => ({
         ...current,
         onboardingComplete: true,
         onboardingAnswers: answers,
         aiChallenges: challenges,
-      };
-      // BUG 6 FIX: Sync on onboarding complete
-      upsertUser.mutate({
-        userId: next.userId,
-        name: next.displayName,
-        inviteCode: next.inviteCode,
-        weeklyCompletion: 0,
+      }));
+      analytics.track(ANALYTICS_EVENTS.ONBOARDING_COMPLETED, {
+        nodeCount: Object.keys(challenges).length,
       });
-      return next;
-    });
-  }, [updateState, upsertUser]);
+    },
+    [updateState]
+  );
 
-  const toggleChallenge = useCallback((challengeId: string, nodeId: string, challengeXp: number) => {
-    updateState((current) => {
-      const wasCompleted = current.challengeProgress[challengeId] ?? false;
-      const newProgress = { ...current.challengeProgress, [challengeId]: !wasCompleted };
-      let xpDelta = !wasCompleted ? challengeXp : -challengeXp;
+  const setPro = useCallback(
+    (value: boolean) => {
+      console.log("[state] Set isPro:", value);
+      updateState((current) => ({ ...current, isPro: value }));
+    },
+    [updateState]
+  );
 
-      const node = SKILL_NODES.find((n) => n.id === nodeId);
-      if (node) {
-        const nodeChallenges = (current.aiChallenges[nodeId] ?? []).length > 0 ? current.aiChallenges[nodeId] : node.defaultChallenges;
-        const wasNodeComplete = nodeChallenges.every((c) => current.challengeProgress[c.id]);
-        const isNodeComplete = nodeChallenges.every((c) => newProgress[c.id]);
+  const toggleChallenge = useCallback(
+    (challengeId: string, nodeId: string, challengeXp: number) => {
+      console.log("[state] Toggle challenge:", challengeId, "node:", nodeId);
+      updateState((current) => {
+        const { xpDelta, nodeJustCompleted, levelJustCompleted, completedLevelNumber } =
+          computeToggleXpDelta(
+            challengeId,
+            nodeId,
+            challengeXp,
+            current.challengeProgress,
+            current.aiChallenges
+          );
 
-        if (!wasNodeComplete && isNodeComplete) {
-          xpDelta += NODE_COMPLETION_XP[node.levelNumber] ?? 150;
-        } else if (wasNodeComplete && !isNodeComplete) {
-          xpDelta -= NODE_COMPLETION_XP[node.levelNumber] ?? 150;
-          // BUG 9 FIX: Handle Level reversal
-          const levelNodes = getNodesForLevel(node.levelNumber);
-          const wasLevelComplete = levelNodes.every(ln => ln.defaultChallenges.every(c => current.challengeProgress[c.id]));
-          if (wasLevelComplete) xpDelta -= LEVEL_COMPLETION_XP[node.levelNumber] ?? 500;
+        const wasCompleted = current.challengeProgress[challengeId] ?? false;
+        const newProgress = {
+          ...current.challengeProgress,
+          [challengeId]: !wasCompleted,
+        };
+
+        const prestigeMultiplier = getPrestigeXpMultiplier(current.prestigeCount);
+        const proMultiplier = current.isPro ? 1.5 : 1;
+        const finalMultiplier = prestigeMultiplier * proMultiplier;
+        const finalXpDelta = xpDelta > 0 ? Math.round(xpDelta * finalMultiplier) : xpDelta;
+
+        const eventName = wasCompleted
+          ? ANALYTICS_EVENTS.CHALLENGE_UNCOMPLETED
+          : ANALYTICS_EVENTS.CHALLENGE_COMPLETED;
+        analytics.track(eventName, { challengeId, nodeId, xp: challengeXp, isPro: current.isPro });
+
+        if (nodeJustCompleted) {
+          console.log("[state] Node complete! xpDelta:", finalXpDelta);
+          analytics.track(ANALYTICS_EVENTS.NODE_COMPLETED, { nodeId });
         }
-      }
+        if (levelJustCompleted && completedLevelNumber !== null) {
+          console.log("[state] Level complete! level:", completedLevelNumber);
+          analytics.track(ANALYTICS_EVENTS.LEVEL_COMPLETED, {
+            levelNumber: completedLevelNumber,
+          });
+        }
 
-      if (current.isPro && xpDelta > 0) xpDelta = Math.round(xpDelta * 1.5);
+        return {
+          ...current,
+          challengeProgress: newProgress,
+          xp: Math.max(0, current.xp + finalXpDelta),
+        };
+      });
+    },
+    [updateState]
+  );
 
-      return {
+  const setAiChallenges = useCallback(
+    (nodeId: string, challenges: Challenge[]) => {
+      console.log("[state] Set AI challenges for node:", nodeId);
+      updateState((current) => ({
         ...current,
-        challengeProgress: newProgress,
-        xp: Math.max(0, current.xp + xpDelta),
-      };
-    });
-  }, [updateState]);
+        aiChallenges: {
+          ...current.aiChallenges,
+          [nodeId]: challenges,
+        },
+      }));
+    },
+    [updateState]
+  );
 
-  // --- Helper Methods ---
-  const setAiChallenges = useCallback((nodeId: string, challenges: Challenge[]) => {
-    updateState(c => ({ ...c, aiChallenges: { ...c.aiChallenges, [nodeId]: challenges } }));
-  }, [updateState]);
-
-  const addFriend = useCallback((code: string, name: string, weeklyCompletion: number) => {
-    updateState(c => ({
-      ...c,
-      friends: [...c.friends, { id: `${code}-${Date.now()}`, name, inviteCode: code, weeklyCompletion: Math.max(0, Math.min(100, weeklyCompletion)) }]
+  const recordAiGeneration = useCallback(() => {
+    console.log("[state] AI generation recorded");
+    updateState((current) => ({
+      ...current,
+      aiGenerations: current.aiGenerations + 1,
     }));
   }, [updateState]);
 
+  const addFriend = useCallback(
+    (code: string, name: string, weeklyCompletion: number) => {
+      console.log("[state] Add friend:", name, code);
+      updateState((current) => ({
+        ...current,
+        friends: [
+          ...current.friends,
+          {
+            id: `${code}-${Date.now()}`,
+            name,
+            inviteCode: code,
+            weeklyCompletion: Math.max(0, Math.min(100, weeklyCompletion)),
+          },
+        ],
+      }));
+    },
+    [updateState]
+  );
+
   const triggerPrestige = useCallback(() => {
+    console.log("[state] Prestige triggered! Count:", state.prestigeCount + 1);
+    analytics.track(ANALYTICS_EVENTS.PRESTIGE_TRIGGERED, {
+      newPrestigeCount: state.prestigeCount + 1,
+    });
     setPrestigeReady(false);
-    updateState(c => ({ ...c, prestigeCount: c.prestigeCount + 1, challengeProgress: {}, aiChallenges: {}, lastResetAt: Date.now(), prestigeDismissed: false }));
-  }, [updateState]);
+    updateState((current) => ({
+      ...current,
+      prestigeCount: current.prestigeCount + 1,
+      challengeProgress: {},
+      aiChallenges: {},
+      lastResetAt: Date.now(),
+    }));
+  }, [updateState, state.prestigeCount]);
 
   const dismissPrestige = useCallback(() => {
+    analytics.track(ANALYTICS_EVENTS.PRESTIGE_DISMISSED);
     setPrestigeReady(false);
-    updateState(c => ({ ...c, prestigeDismissed: true }));
-  }, [updateState]);
+  }, []);
 
-  const addBonusXp = useCallback((amount: number) => {
-    updateState(c => ({ ...c, xp: c.xp + amount }));
-  }, [updateState]);
+  const addBonusXp = useCallback(
+    (amount: number) => {
+      console.log("[state] Add bonus XP:", amount);
+      analytics.track(ANALYTICS_EVENTS.AD_REWARD_CLAIMED, { xpAmount: amount });
+      updateState((current) => {
+        const prestigeMultiplier = getPrestigeXpMultiplier(current.prestigeCount);
+        const proMultiplier = current.isPro ? 1.5 : 1;
+        const finalAmount = Math.round(amount * prestigeMultiplier * proMultiplier);
+        console.log("[state] Bonus XP with multiplier:", finalAmount, "isPro:", current.isPro, "prestigeCount:", current.prestigeCount);
+        return { ...current, xp: current.xp + finalAmount };
+      });
+    },
+    [updateState]
+  );
 
-  const recordAiGeneration = useCallback((domainId: string) => {
-    updateState(c => ({ ...c, lastAiGenTime: { ...c.lastAiGenTime, [domainId]: Date.now() } }));
-  }, [updateState]);
+  const isNodeComplete = useCallback(
+    (nodeId: string): boolean => {
+      return isNodeDone(nodeId, state.challengeProgress, state.aiChallenges);
+    },
+    [state.challengeProgress, state.aiChallenges]
+  );
 
-  const setPro = useCallback((status: boolean) => {
-    updateState(c => ({ ...c, isPro: status }));
-  }, [updateState]);
+  const isLevelUnlocked = useCallback(
+    (levelNumber: number): boolean => {
+      if (levelNumber === 1) return true;
+      const currentLevelNodes = getNodesForLevel(levelNumber);
+      return currentLevelNodes.some((node) => {
+        if (node.parentIds.length === 0) return true;
+        return node.parentIds.every((parentId) =>
+          isNodeDone(parentId, state.challengeProgress, state.aiChallenges)
+        );
+      });
+    },
+    [state.challengeProgress, state.aiChallenges]
+  );
 
-  // --- Read Methods ---
-  const isNodeComplete = useCallback((nodeId: string): boolean => {
-    const node = SKILL_NODES.find((n) => n.id === nodeId);
-    if (!node) return false;
-    const challenges = (state.aiChallenges[nodeId] ?? []).length > 0 ? state.aiChallenges[nodeId] : node.defaultChallenges;
-    return challenges.every((c) => state.challengeProgress[c.id]);
+  const isNodeUnlocked = useCallback(
+    (nodeId: string): boolean => {
+      const node = SKILL_NODES.find((n) => n.id === nodeId);
+      if (!node) return false;
+      if (node.parentIds.length === 0) return true;
+      return node.parentIds.every((parentId) =>
+        isNodeDone(parentId, state.challengeProgress, state.aiChallenges)
+      );
+    },
+    [state.challengeProgress, state.aiChallenges]
+  );
+
+  const isTreeComplete = useMemo(() => {
+    return isTreeDone(state.challengeProgress, state.aiChallenges);
   }, [state.challengeProgress, state.aiChallenges]);
 
-  const isLevelUnlocked = useCallback((levelNumber: number): boolean => {
-    if (levelNumber === 1) return true;
-    return getNodesForLevel(levelNumber - 1).every((n) => isNodeComplete(n.id));
-  }, [isNodeComplete]);
-
-  const isNodeUnlocked = useCallback((nodeId: string): boolean => {
-    const node = SKILL_NODES.find((n) => n.id === nodeId);
-    return node ? isLevelUnlocked(node.levelNumber) : false;
-  }, [isLevelUnlocked]);
-
-  // --- Computed Stats ---
-  const isTreeComplete = useMemo(() => SKILL_NODES.every(node => isNodeComplete(node.id)), [isNodeComplete]);
-
   useEffect(() => {
-    if (isTreeComplete && state.onboardingComplete && !state.prestigeDismissed) setPrestigeReady(true);
-  }, [isTreeComplete, state.onboardingComplete, state.prestigeDismissed]);
+    if (isTreeComplete && state.onboardingComplete) {
+      console.log("[state] Tree complete! Prestige ready.");
+      setPrestigeReady(true);
+    }
+  }, [isTreeComplete, state.onboardingComplete]);
+
+  const completedChallenges = useMemo(() => {
+    return computeCompletedChallenges(state.challengeProgress, state.aiChallenges);
+  }, [state.challengeProgress, state.aiChallenges]);
 
   const totalChallenges = useMemo(() => {
-    return SKILL_NODES.reduce((total, node) => total + ((state.aiChallenges[node.id] ?? []).length || node.defaultChallenges.length), 0);
+    return computeTotalChallenges(state.aiChallenges);
   }, [state.aiChallenges]);
 
-  const completedChallengesCount = useMemo(() => {
-    return SKILL_NODES.reduce((total, node) => {
-      const challenges = (state.aiChallenges[node.id] ?? []).length > 0 ? state.aiChallenges[node.id] : node.defaultChallenges;
-      return total + challenges.filter(c => state.challengeProgress[c.id]).length;
-    }, 0);
+  const weeklyCompletion = useMemo(() => {
+    return computeWeeklyCompletion(state.challengeProgress, state.aiChallenges);
   }, [state.challengeProgress, state.aiChallenges]);
 
-  const weeklyCompletion = totalChallenges > 0 ? Math.round((completedChallengesCount / totalChallenges) * 100) : 0;
+  const weeklyCompletionForSync = weeklyCompletion;
 
-  // BUG 7 FIX: Sync logic
   useEffect(() => {
-    if (!state.isAuthed || !state.onboardingComplete) return;
-    if (weeklyCompletion === lastSyncedCompletion) return;
-    const handler = setTimeout(() => {
-      upsertUser.mutate({ userId: state.userId, name: state.displayName || "Anonymous", inviteCode: state.inviteCode, weeklyCompletion });
-      setLastSyncedCompletion(weeklyCompletion);
+    if (!state.isAuthed || !state.userId || !state.displayName || !state.inviteCode) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      console.log("[state] Auto-syncing user to backend");
+      upsertUserMutation.mutate({
+        userId: state.userId,
+        name: state.displayName,
+        inviteCode: state.inviteCode,
+        weeklyCompletion: weeklyCompletionForSync,
+      });
     }, 1500);
-    return () => clearTimeout(handler);
-  }, [weeklyCompletion, state.isAuthed, state.onboardingComplete, state.userId, state.displayName, state.inviteCode]);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [state.isAuthed, state.userId, state.displayName, state.inviteCode, weeklyCompletionForSync, upsertUserMutation]);
 
-  return {
-    state,
-    signIn,
-    signOut,
-    updateDisplayName,
-    completeOnboarding,
-    toggleChallenge,
-    setAiChallenges,
-    addFriend,
-    addBonusXp,
-    triggerPrestige,
-    dismissPrestige,
-    recordAiGeneration,
-    setPro,
-    isNodeComplete,
-    isNodeUnlocked,
-    isLevelUnlocked,
-    isTreeComplete,
-    prestigeReady,
-    userLevel: getUserLevel(state.xp),
-    prestigeRank: getPrestigeRank(state.prestigeCount),
-    weeklyCompletion,
-    completedChallengesCount,
-    totalChallenges,
-    leaderboard: useMemo(() => {
-      const entries = [...state.friends, { id: "self", name: state.displayName || "You", inviteCode: state.inviteCode, weeklyCompletion }];
-      return entries.sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
-    }, [state.friends, state.displayName, state.inviteCode, weeklyCompletion]),
-  };
+  const completedNodes = useMemo(() => {
+    return SKILL_NODES.filter((n) =>
+      isNodeDone(n.id, state.challengeProgress, state.aiChallenges)
+    ).length;
+  }, [state.challengeProgress, state.aiChallenges]);
+
+  const completedLevels = useMemo(() => {
+    return TREE_LEVELS.filter((l) => {
+      const nodes = getNodesForLevel(l.number);
+      return nodes.every((n) =>
+        isNodeDone(n.id, state.challengeProgress, state.aiChallenges)
+      );
+    }).length;
+  }, [state.challengeProgress, state.aiChallenges]);
+
+  const userLevel = getUserLevelFromXp(state.xp);
+  const prestigeRank = getPrestigeRank(state.prestigeCount);
+
+  const leaderboard = useMemo(() => {
+    const entries: Friend[] = [
+      ...state.friends,
+      {
+        id: "self",
+        name: state.displayName || "You",
+        inviteCode: state.inviteCode,
+        weeklyCompletion,
+      },
+    ];
+    return entries.sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
+  }, [state.friends, state.displayName, state.inviteCode, weeklyCompletion]);
+
+  return useMemo(
+    () => ({
+      state,
+      isLoading: storedQuery.isLoading,
+      signIn,
+      signOut,
+      updateDisplayName,
+      completeOnboarding,
+      toggleChallenge,
+      setAiChallenges,
+      recordAiGeneration,
+      addFriend,
+      addBonusXp,
+      setPro,
+      triggerPrestige,
+      dismissPrestige,
+      isNodeComplete,
+      isNodeUnlocked,
+      isLevelUnlocked,
+      isTreeComplete,
+      prestigeReady,
+      userLevel,
+      prestigeRank,
+      weeklyCompletion,
+      completedChallenges,
+      totalChallenges,
+      completedNodes,
+      completedLevels,
+      leaderboard,
+    }),
+    [
+      state,
+      storedQuery.isLoading,
+      signIn,
+      signOut,
+      updateDisplayName,
+      completeOnboarding,
+      toggleChallenge,
+      setAiChallenges,
+      recordAiGeneration,
+      addFriend,
+      addBonusXp,
+      setPro,
+      triggerPrestige,
+      dismissPrestige,
+      isNodeComplete,
+      isNodeUnlocked,
+      isLevelUnlocked,
+      isTreeComplete,
+      prestigeReady,
+      userLevel,
+      prestigeRank,
+      weeklyCompletion,
+      completedChallenges,
+      totalChallenges,
+      completedNodes,
+      completedLevels,
+      leaderboard,
+    ]
+  );
 });

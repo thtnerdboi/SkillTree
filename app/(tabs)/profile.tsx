@@ -28,8 +28,8 @@ import {
   DOMAIN_COLOR,
   SKILL_NODES,
   TREE_LEVELS,
-  USER_LEVEL_THRESHOLDS,
   getNodesForLevel,
+  getPrestigeBonusLabel,
   getPrestigeRank,
   getXpForCurrentLevel,
   getXpForNextLevel,
@@ -44,12 +44,10 @@ export default function ProfileScreen() {
     signOut,
     updateDisplayName,
     addBonusXp,
-    setPro,
     userLevel,
     prestigeRank,
     weeklyCompletion,
     completedChallenges,
-    totalChallenges,
     completedNodes,
     completedLevels,
     isNodeComplete,
@@ -82,6 +80,7 @@ export default function ProfileScreen() {
 
   const avatarLetter = (state.displayName || "A").charAt(0).toUpperCase();
   const nextPrestige = getPrestigeRank(state.prestigeCount + 1);
+  const nextPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount + 1);
 
   const domainStats = (["body", "mind", "craft"] as const).map((d) => {
     const domNodes = SKILL_NODES.filter((n) => n.domainId === d);
@@ -247,8 +246,7 @@ export default function ProfileScreen() {
             })}
           </View>
 
-          {state.prestigeCount < 5 && (
-            <View style={[styles.sectionCard, { borderColor: `${nextPrestige.color}30` }]}>
+          <View style={[styles.sectionCard, { borderColor: `${nextPrestige.color}30` }]}>
               <Text style={styles.sectionTitle}>NEXT PRESTIGE</Text>
               <View style={styles.nextPrestigeRow}>
                 <View style={[styles.nextPrestigeOrb, { backgroundColor: `${nextPrestige.color}15`, borderColor: `${nextPrestige.color}40` }]}>
@@ -256,11 +254,10 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.nextPrestigeInfo}>
                   <Text style={[styles.nextPrestigeName, { color: nextPrestige.color }]}>{nextPrestige.name}</Text>
-                  <Text style={styles.nextPrestigeHint}>Complete all 4 levels to unlock</Text>
+                  <Text style={styles.nextPrestigeHint}>Complete all 7 levels to unlock · {nextPrestigeBonus}</Text>
                 </View>
               </View>
             </View>
-          )}
 
           {!state.isPro && (
             <View style={styles.proCard}>

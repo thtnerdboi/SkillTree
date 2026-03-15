@@ -2,11 +2,24 @@ import { httpBatchLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import superjson from "superjson";
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import type { AppRouter } from "@/backend/trpc/app-router";
 
 export const trpc = createTRPCReact<AppRouter>();
+
+// These variables hold your auth state in memory for fast synchronous access
+let activeUserId: string | null = null;
+let activeInviteCode: string | null = null;
+
+export const setTrpcAuthHeaders = (userId: string, inviteCode: string) => {
+  activeUserId = userId;
+  activeInviteCode = inviteCode;
+};
+
+export const clearTrpcAuthHeaders = () => {
+  activeUserId = null;
+  activeInviteCode = null;
+};
 
 const getBaseUrl = () => {
   const RENDER_URL = "https://skilltree-backend-rff0.onrender.com";
@@ -33,20 +46,12 @@ export const trpcClient = trpc.createClient({
     httpBatchLink({
       url: `${getBaseUrl()}/api/trpc`,
       transformer: superjson,
-      async headers() {
-        try {
-          const saved = await AsyncStorage.getItem("arcstep-state-v6");
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            return {
-              authorization: `Bearer ${parsed.userId}`,
-            };
-          }
-        } catch (e) {
-          console.error("[tRPC] Header Error:", e);
-          return {};
-        }
-        return {};
+      headers() {
+        // Synchronously return the headers from our in-memory variables
+        return {
+          ...(activeUserId ? { authorization: `Bearer ${activeUserId}` } : {}),
+          ...(activeInviteCode ? { "x-invite-code": activeInviteCode } : {}),
+        };
       },
     }),
   ],
