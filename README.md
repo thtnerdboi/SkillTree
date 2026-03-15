@@ -2,6 +2,11 @@
 
 SkillTree is a gamified habit tracker and personal development app. It turns your daily routines into an RPG, allowing you to build your "Skill Tree" by completing real-world challenges across three core pillars: Mind, Body, and Craft.
 
+## 🎯 Vision
+
+SkillTree explores how AI can enhance structured self-improvement
+by generating dynamic goals within a gamified progression system.
+
 ## 🚀 Features
 - **Interactive Skill Tree:** Unlock new nodes as you build consistency.
 - **Local Privacy:** All your core progression, XP, and streaks are saved locally on your device for maximum privacy.
@@ -20,5 +25,10 @@ Users can upgrade to the Pro tier to supercharge their growth:
 - OpenAI API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
 
+## ☕ Buy me a Coffee
+I am solo vibecoding this so it will take time, if you want to support me you can buy me a coffee with the link below
+https://buymeacoffee.com/thtnerdboi
+
 ---
 *For support or inquiries, please refer to our Terms of Service and Privacy Policy.*
+
