@@ -1,9 +1,8 @@
-import { publicProcedure, router } from "../create-context";
+import { publicProcedure, createTRPCRouter } from "../create-context";
 import { z } from "zod";
-import { publicProcedure, router } from "../store";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export const aiRouter = router({
+export const aiRouter = createTRPCRouter({
   generateTree: publicProcedure
     .input(
       z.object({
@@ -13,7 +12,6 @@ export const aiRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // Initialize Gemini using your environment variable
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY is missing from backend environment variables.");
@@ -24,41 +22,30 @@ export const aiRouter = router({
 
       const prompt = `
         You are an expert gamified habit tracker and RPG skill tree designer.
-        The user has provided the following main goals for three different domains of their life:
-        - Mind (Focus/Mental health): ${input.mind || "General mental clarity"}
-        - Body (Health/Fitness): ${input.body || "General physical health"}
-        - Craft (Career/Hobby): ${input.craft || "General skill improvement"}
+        The user has provided the following main goals:
+        - Mind: ${input.mind || "General mental clarity"}
+        - Body: ${input.body || "General physical health"}
+        - Craft: ${input.craft || "General skill improvement"}
 
-        Create 3 actionable, highly specific micro-challenges for each domain to act as the "Level 1" foundation. 
+        Create 3 actionable micro-challenges for each of these exact node IDs:
+        calm, vitality, spark, focus, reflection, energy, build, learning, strength,
+        coding, recovery, discipline, endurance, making, memory, creativity, mobility,
+        output, nutrition, insight, sleep, career, expression, flow, peak, mastery, legacy
+
         Keep titles under 3 words. Keep details under 10 words. Make them sound like RPG quests.
 
-        Respond ONLY with a valid JSON object in the exact following structure, with no markdown formatting or extra text:
+        Respond ONLY with a valid JSON object with no markdown, where keys are node IDs and values are arrays of exactly 3 challenges:
         {
-          "calm": [
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 }
-          ],
-          "vitality": [
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 }
-          ],
-          "spark": [
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 },
-            { "title": "...", "detail": "...", "xp": 30 }
-          ]
+          "calm": [{ "title": "...", "detail": "...", "xp": 30 }, ...],
+          "vitality": [...],
+          ...all 27 nodes...
         }
       `;
 
       try {
         const result = await model.generateContent(prompt);
         const text = result.response.text();
-        
-        // Clean up markdown code blocks if the AI includes them just to be safe
         const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        
         return JSON.parse(cleanedText);
       } catch (error) {
         console.error("Gemini AI Error:", error);
