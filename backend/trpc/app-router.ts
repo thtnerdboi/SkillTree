@@ -1,12 +1,12 @@
-import { router } from "./store";
+import { createTRPCRouter } from "./create-context";
 import { socialRouter } from "./routes/social";
-import { stripeRouter } from "./routes/stripe";
-import { aiRouter } from "./routes/ai"; // <-- 1. Import the new route
+import { stripeRouter } from "./routes/stripe"; // Add this
+import { aiRouter } from "./routes/ai";         // Add this
 
-export const appRouter = router({
+export const appRouter = createTRPCRouter({
   social: socialRouter,
-  stripe: stripeRouter,
-  ai: aiRouter, // <-- 2. Add it to the main tree
+  stripe: stripeRouter, // Add this
+  ai: aiRouter,         // Add this
 });
 
 export type AppRouter = typeof appRouter;

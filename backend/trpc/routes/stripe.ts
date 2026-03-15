@@ -1,6 +1,7 @@
-import { publicProcedure, router } from "../trpc";
+import { publicProcedure, router } from "../create-context"; 
 import { z } from "zod";
 import Stripe from "stripe";
+// ... rest of file
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2023-10-16",
