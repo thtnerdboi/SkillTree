@@ -1,35 +1,28 @@
-import React, { useCallback, useRef, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
-  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  View,
   TextInput,
   TouchableOpacity,
-  View,
-  Alert,
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
 } from "react-native";
-import {
-  Check,
-  Lock,
-  Sparkles,
-  X,
-  Zap,
-} from "lucide-react-native";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
+import { Check, Lock, X, Zap, Sparkles } from "lucide-react-native";
 import { useMutation } from "@tanstack/react-query";
 import { generateObject } from "@rork-ai/toolkit-sdk";
 import { z } from "zod";
 import Colors from "@/constants/colors";
-import {
-  Challenge,
-  DOMAIN_COLOR,
-  DOMAIN_LABEL,
-  SKILL_NODES,
-} from "@/mocks/mvp-data";
+import { DOMAIN_COLOR, DOMAIN_LABEL, SKILL_NODES } from "@/mocks/mvp-data";
 import { useAppState } from "@/state/app-state";
 
 type IconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
@@ -41,33 +34,61 @@ type Props = {
   flashXP: (amount: number) => void;
 };
 
+function alpha(hexColor: string, value: string): string {
+  return `${hexColor}${value}`;
+}
+
 export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
-  const { state, toggleChallenge, setAiChallenges, isNodeComplete, isNodeUnlocked, recordAiGeneration } = useAppState();
+  const { state, toggleChallenge, isNodeComplete, isNodeUnlocked, setAiChallenges, recordAiGeneration } = useAppState();
   const [goalInput, setGoalInput] = useState<string>("");
-  const panelAnim = useRef(new Animated.Value(0)).current;
+
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const cardTranslate = useRef(new Animated.Value(40)).current;
+  const cardScale = useRef(new Animated.Value(0.96)).current;
 
   useEffect(() => {
-    Animated.spring(panelAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 13,
-    }).start();
-  }, [panelAnim]);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardTranslate, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 52,
+        friction: 11,
+      }),
+      Animated.spring(cardScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 54,
+        friction: 10,
+      }),
+    ]).start();
+  }, [cardScale, cardTranslate, overlayOpacity]);
 
   const close = useCallback(() => {
-    Animated.timing(panelAnim, {
-      toValue: 0,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(() => onClose());
-  }, [panelAnim, onClose]);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardTranslate, {
+        toValue: 36,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardScale, {
+        toValue: 0.98,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => onClose());
+  }, [cardScale, cardTranslate, onClose, overlayOpacity]);
 
-  const panelTranslateY = panelAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [600, 0],
-  });
-
+  // AI Generation Logic restored!
   const regenerateNodeMutation = useMutation({
     mutationFn: async ({ goal }: { goal: string }) => {
       const result = await generateObject({
@@ -99,20 +120,13 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
     onSuccess: (challenges) => {
       setAiChallenges(node.id, challenges);
       setGoalInput("");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (e) => {
       console.error("[panel] AI generation failed:", e);
       Alert.alert("Generation Failed", "Please check your connection and try again.");
     },
   });
-
-  const nodeColor = DOMAIN_COLOR[node.domainId];
-  const nodeUnlocked = isNodeUnlocked(node.id);
-  const nodeComplete = isNodeComplete(node.id);
-  const hasAiChallenges = (state.aiChallenges[node.id] ?? []).length > 0;
-  const activeChallenges = hasAiChallenges ? state.aiChallenges[node.id] : node.defaultChallenges;
-  const nodeProgress = activeChallenges.filter((c) => state.challengeProgress[c.id]).length;
-  const NodeIcon = iconMap[node.icon];
 
   const handleRegenerate = () => {
     const COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -136,176 +150,514 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
     }
   };
 
+  const nodeColor = DOMAIN_COLOR[node.domainId];
+  const nodeUnlocked = isNodeUnlocked(node.id);
+  const nodeComplete = isNodeComplete(node.id);
+  const hasAiChallenges = (state.aiChallenges[node.id] ?? []).length > 0;
+  const activeChallenges = useMemo(() => {
+    const customChallenges = state.aiChallenges[node.id] ?? [];
+    return customChallenges.length > 0 ? customChallenges : node.defaultChallenges;
+  }, [node.defaultChallenges, node.id, state.aiChallenges]);
+  
+  const nodeProgress = activeChallenges.filter((challenge) => state.challengeProgress[challenge.id]).length;
+  const completionRatio = activeChallenges.length > 0 ? nodeProgress / activeChallenges.length : 0;
+  const NodeIcon = iconMap[node.icon];
+
   return (
-    <>
-      <Pressable style={styles.backdrop} onPress={close} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "position" : undefined} style={styles.panelKAV}>
-        <Animated.View style={[styles.panel, { transform: [{ translateY: panelTranslateY }] }]}>
-          <View style={styles.panelHandle} />
-          <ScrollView 
-            style={styles.panelScroll} 
-            contentContainerStyle={styles.panelScrollContent} 
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+    <Modal visible transparent animationType="none" onRequestClose={close}>
+      <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
+        <Pressable style={styles.backdrop} onPress={close} testID="close-panel-backdrop" />
+        
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Animated.View
+            style={[
+              styles.modalCard,
+              {
+                transform: [{ translateY: cardTranslate }, { scale: cardScale }],
+              },
+            ]}
           >
-            {/* Header */}
-            <View style={styles.panelTopRow}>
-              <View style={styles.panelTitleBlock}>
-                <View style={[styles.panelDomainChip, { backgroundColor: `${nodeColor}18`, borderColor: `${nodeColor}40` }]}>
-                  {NodeIcon && <NodeIcon size={11} color={nodeColor} strokeWidth={2} />}
-                  <Text style={[styles.panelDomainChipText, { color: nodeColor }]}>{DOMAIN_LABEL[node.domainId]}</Text>
-                </View>
-                <Text style={styles.panelTitle}>{node.title}</Text>
-              </View>
-              <Pressable style={styles.closeBtn} onPress={close}>
-                <X size={15} color={Colors.light.muted} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.panelDesc}>{node.description}</Text>
-
-            {nodeComplete && (
-              <View style={[styles.completedBanner, { borderColor: `${nodeColor}40`, backgroundColor: `${nodeColor}10` }]}>
-                <Check size={14} color={nodeColor} strokeWidth={2.5} />
-                <Text style={[styles.completedBannerText, { color: nodeColor }]}>Node Complete! +100 Bonus XP earned</Text>
-              </View>
-            )}
-
-            {/* Personalization Section */}
-            {nodeUnlocked && (
-              <View style={styles.regenSection}>
-                <View style={styles.regenLabelRow}>
-                  <Sparkles size={12} color={nodeColor} strokeWidth={2} />
-                  <Text style={styles.regenLabel}>PERSONALIZE CHALLENGES</Text>
-                </View>
-                <TextInput
-                  style={[styles.regenInput, { borderColor: goalInput.length > 0 ? `${nodeColor}50` : "#1A2030" }]}
-                  value={goalInput}
-                  onChangeText={setGoalInput}
-                  placeholder={node.goalPrompt}
-                  placeholderTextColor="#2A3560"
-                  multiline
-                  numberOfLines={2}
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.regenBtn,
-                    goalInput.trim().length > 8 && !regenerateNodeMutation.isPending
-                      ? { backgroundColor: nodeColor }
-                      : { backgroundColor: "#0E1320", borderColor: "#1A2030", borderWidth: 1 },
-                  ]}
-                  onPress={handleRegenerate}
-                  disabled={goalInput.trim().length <= 8 || regenerateNodeMutation.isPending}
-                >
-                  {regenerateNodeMutation.isPending ? (
-                    <ActivityIndicator size="small" color={nodeColor} />
-                  ) : (
-                    <>
-                      <Sparkles size={13} color={goalInput.trim().length > 8 ? "#060810" : "#2A3560"} strokeWidth={2} />
-                      <Text style={[styles.regenBtnText, { color: goalInput.trim().length > 8 ? "#060810" : "#2A3560" }]}>
-                        {hasAiChallenges ? "Regenerate" : "Generate My Goals"}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Challenges List */}
-            <View style={styles.challengeSection}>
-              <View style={styles.challengeHeader}>
-                <Text style={styles.challengeHeaderTitle}>CHALLENGES</Text>
-                <Text style={[styles.challengeHeaderProg, { color: nodeColor }]}>{nodeProgress}/{activeChallenges.length}</Text>
-              </View>
-
-              {activeChallenges.map((challenge) => {
-                const done = state.challengeProgress[challenge.id] ?? false;
-                return (
-                  <Pressable
-                    key={challenge.id}
-                    style={({ pressed }) => [
-                      styles.challengeRow,
-                      done && styles.challengeRowDone,
-                      pressed && { opacity: 0.75 },
-                      !nodeUnlocked && styles.challengeRowLocked,
-                    ]}
-                    onPress={() => {
-                      if (!nodeUnlocked) return;
-                      toggleChallenge(challenge.id, node.id, challenge.xp);
-                      if (!done) flashXP(challenge.xp);
-                    }}
-                  >
-                    <View style={[styles.challengeCheck, done && { backgroundColor: nodeColor, borderColor: nodeColor }]}>
-                      {done && <Check size={11} color="#000" strokeWidth={3} />}
-                    </View>
-                    <View style={styles.challengeText}>
-                      <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
-                      <Text style={styles.challengeDetail}>{challenge.detail}</Text>
-                    </View>
-                    <View style={[styles.xpPill, { backgroundColor: `${nodeColor}15`, borderColor: `${nodeColor}30` }]}>
-                      <Zap size={9} color={nodeColor} strokeWidth={2.5} />
-                      <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
-                    </View>
-                    {!nodeUnlocked && <Lock size={12} color="#2A3060" />}
+            <BlurView tint="dark" intensity={80} style={styles.blurShell}>
+              <LinearGradient
+                colors={[alpha(nodeColor, "50"), alpha(nodeColor, "18"), "rgba(6,8,16,0.96)"]}
+                start={{ x: 0.15, y: 0 }}
+                end={{ x: 0.85, y: 1 }}
+                style={styles.hero}
+              >
+                <View style={styles.heroTopBar}>
+                  <View style={[styles.domainChip, { borderColor: alpha(nodeColor, "45"), backgroundColor: alpha(nodeColor, "20") }]}>
+                    <Text style={[styles.domainChipText, { color: nodeColor }]}>{DOMAIN_LABEL[node.domainId]}</Text>
+                  </View>
+                  <Pressable style={styles.closeButton} onPress={close} testID="close-panel">
+                    <BlurView tint="dark" intensity={60} style={styles.closeButtonBlur}>
+                      <X size={16} color={Colors.light.text} strokeWidth={2.4} />
+                    </BlurView>
                   </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
-    </>
+                </View>
+
+                <View style={styles.heroCenter}>
+                  <View style={[styles.heroGlowOuter, { backgroundColor: alpha(nodeColor, "18") }]} />
+                  <View style={[styles.heroGlowMid, { backgroundColor: alpha(nodeColor, "22") }]} />
+                  <View
+                    style={[
+                      styles.heroIconShell,
+                      {
+                        borderColor: alpha(nodeColor, "4A"),
+                        backgroundColor: alpha(nodeColor, "12"),
+                      },
+                    ]}
+                  >
+                    {NodeIcon ? (
+                      <NodeIcon size={72} color={nodeColor} strokeWidth={2.1} />
+                    ) : (
+                      <Zap size={72} color={nodeColor} strokeWidth={2.1} />
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.heroTextWrap}>
+                  <Text style={styles.title}>{node.title}</Text>
+                  <Text style={styles.description}>{node.description}</Text>
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Progress</Text>
+                      <Text style={[styles.metaValue, { color: nodeColor }]}>
+                        {nodeProgress}/{activeChallenges.length}
+                      </Text>
+                    </View>
+                    <View style={styles.metaDivider} />
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Status</Text>
+                      <Text style={[styles.metaValue, { color: nodeComplete ? nodeColor : Colors.light.text }]}>
+                        {nodeComplete ? "Completed" : nodeUnlocked ? "Active" : "Locked"}
+                      </Text>
+                    </View>
+                    <View style={styles.metaDivider} />
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Domain</Text>
+                      <Text style={styles.metaValue}>{DOMAIN_LABEL[node.domainId]}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${Math.max(8, completionRatio * 100)}%` as `${number}%`, backgroundColor: nodeColor }]} />
+                  </View>
+                </View>
+              </LinearGradient>
+
+              <ScrollView
+                style={styles.contentScroll}
+                contentContainerStyle={styles.contentContainer}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {nodeComplete ? (
+                  <View style={[styles.bannerCard, { borderColor: alpha(nodeColor, "38") }]}>
+                    <BlurView tint="dark" intensity={55} style={styles.bannerBlur}>
+                      <Check size={16} color={nodeColor} strokeWidth={2.8} />
+                      <Text style={[styles.bannerText, { color: nodeColor }]}>Node mastered. Bonus XP secured.</Text>
+                    </BlurView>
+                  </View>
+                ) : null}
+
+                {/* Restored Personalize Section */}
+                {nodeUnlocked && (
+                  <View style={[styles.regenSection, { borderColor: alpha(nodeColor, "25") }]}>
+                    <BlurView tint="dark" intensity={40} style={styles.regenBlur}>
+                      <View style={styles.regenLabelRow}>
+                        <Sparkles size={12} color={nodeColor} strokeWidth={2.5} />
+                        <Text style={styles.regenLabel}>PERSONALIZE CHALLENGES</Text>
+                      </View>
+                      <TextInput
+                        style={[styles.regenInput, { borderColor: goalInput.length > 0 ? alpha(nodeColor, "50") : "rgba(255,255,255,0.08)" }]}
+                        value={goalInput}
+                        onChangeText={setGoalInput}
+                        placeholder={node.goalPrompt}
+                        placeholderTextColor="rgba(255,255,255,0.3)"
+                        multiline
+                        numberOfLines={2}
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.regenBtn,
+                          goalInput.trim().length > 8 && !regenerateNodeMutation.isPending
+                            ? { backgroundColor: nodeColor }
+                            : { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+                        ]}
+                        onPress={handleRegenerate}
+                        disabled={goalInput.trim().length <= 8 || regenerateNodeMutation.isPending}
+                      >
+                        {regenerateNodeMutation.isPending ? (
+                          <ActivityIndicator size="small" color={nodeColor} />
+                        ) : (
+                          <>
+                            <Sparkles size={14} color={goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)"} strokeWidth={2.5} />
+                            <Text style={[styles.regenBtnText, { color: goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)" }]}>
+                              {hasAiChallenges ? "Regenerate Goals" : "Generate Custom Goals"}
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </BlurView>
+                  </View>
+                )}
+
+                {activeChallenges.map((challenge) => {
+                  const done = state.challengeProgress[challenge.id] ?? false;
+
+                  return (
+                    <Pressable
+                      key={challenge.id}
+                      onPress={async () => {
+                        if (!nodeUnlocked) return;
+                        toggleChallenge(challenge.id, node.id, challenge.xp);
+                        if (!done) {
+                          flashXP(challenge.xp);
+                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } else {
+                          await Haptics.selectionAsync();
+                        }
+                      }}
+                      testID={`challenge-${challenge.id}`}
+                      style={({ pressed }) => [styles.challengeCardWrap, pressed && styles.challengeCardPressed]}
+                    >
+                      <BlurView tint="dark" intensity={60} style={[styles.challengeCard, !nodeUnlocked && styles.challengeLocked]}>
+                        <View style={styles.challengeLeft}>
+                          <View
+                            style={[
+                              styles.checkOrb,
+                              {
+                                borderColor: done ? nodeColor : alpha(nodeColor, "40"),
+                                backgroundColor: done ? nodeColor : alpha(nodeColor, "14"),
+                              },
+                            ]}
+                          >
+                            {done ? (
+                              <Check size={12} color="#02050C" strokeWidth={3} />
+                            ) : !nodeUnlocked ? (
+                              <Lock size={12} color={Colors.light.muted} strokeWidth={2.4} />
+                            ) : null}
+                          </View>
+                          <View style={styles.challengeTextBlock}>
+                            <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
+                            <Text style={styles.challengeDetail}>{challenge.detail}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.challengeRight}>
+                          <View style={[styles.xpPill, { borderColor: alpha(nodeColor, "30"), backgroundColor: alpha(nodeColor, "14") }]}>
+                            <Zap size={10} color={nodeColor} strokeWidth={2.5} />
+                            <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
+                          </View>
+                        </View>
+                      </BlurView>
+                    </Pressable>
+                  );
+                })}
+
+                <View style={styles.footerSpace} />
+              </ScrollView>
+            </BlurView>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Animated.View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 8 },
-  panelKAV: { position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 10 },
-  panel: { 
-    backgroundColor: "#0C1120", // Solid background for Android
-    borderTopLeftRadius: 30, 
-    borderTopRightRadius: 30, 
-    borderTopWidth: 1, 
-    borderColor: "#1A2238", 
-    paddingTop: 12, 
-    elevation: 28, // Shadow for Android
-    overflow: "hidden", // Fixes polygon bleed
-    maxHeight: 580,
-    shadowColor: "#000",
-    shadowOpacity: 0.8,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: -8 },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(3,6,12,0.55)",
+    justifyContent: "flex-end",
   },
-  panelHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#202840", alignSelf: "center", marginBottom: 16 },
-  panelScroll: { maxHeight: 540 },
-  panelScrollContent: { paddingHorizontal: 22, paddingBottom: 50, gap: 16 },
-  panelTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  panelTitleBlock: { gap: 6, flex: 1 },
-  panelDomainChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, alignSelf: "flex-start" },
-  panelDomainChipText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
-  panelTitle: { fontSize: 28, fontWeight: "900", color: Colors.light.text, lineHeight: 32 },
-  panelDesc: { fontSize: 14, lineHeight: 22, color: Colors.light.muted },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#0E1320", alignItems: "center", justifyContent: "center" },
-  completedBanner: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1 },
-  completedBannerText: { fontSize: 13, fontWeight: "700", flex: 1 },
-  regenSection: { backgroundColor: "#080B14", borderRadius: 18, padding: 16, gap: 10, borderWidth: 1, borderColor: "#141C2E", overflow: "hidden" },
-  regenLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  regenLabel: { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: Colors.light.muted, fontWeight: "700" },
-  regenInput: { backgroundColor: "#060810", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.light.text, borderWidth: 1, lineHeight: 20, minHeight: 60, textAlignVertical: "top" },
-  regenBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 13, overflow: "hidden" },
-  regenBtnText: { fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
-  challengeSection: { gap: 8 },
-  challengeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 },
-  challengeHeaderTitle: { fontSize: 10, letterSpacing: 2.5, textTransform: "uppercase", color: Colors.light.muted, fontWeight: "700" },
-  challengeHeaderProg: { fontSize: 13, fontWeight: "800" },
-  challengeRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#080B14", borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, borderWidth: 1, borderColor: "#141C2E", overflow: "hidden" },
-  challengeRowDone: { borderColor: "#1A2438", backgroundColor: "#060910" },
-  challengeRowLocked: { opacity: 0.5 },
-  challengeCheck: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: "#232840", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  challengeText: { flex: 1 },
-  challengeTitle: { fontSize: 14, fontWeight: "600", color: Colors.light.text },
-  challengeTitleDone: { textDecorationLine: "line-through", color: Colors.light.muted },
-  challengeDetail: { fontSize: 12, color: Colors.light.muted, marginTop: 2 },
-  xpPill: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  xpPillText: { fontSize: 11, fontWeight: "700" },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    flex: 1,
+    marginTop: Platform.OS === "web" ? 24 : 12,
+    marginHorizontal: 10,
+    marginBottom: 10,
+    borderRadius: 34,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    shadowColor: "#000",
+    shadowOpacity: 0.34,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 24,
+  },
+  blurShell: {
+    flex: 1,
+    backgroundColor: "rgba(8,10,18,0.55)",
+  },
+  hero: {
+    minHeight: 360,
+    paddingTop: 24,
+    paddingHorizontal: 22,
+    paddingBottom: 22,
+    justifyContent: "space-between",
+  },
+  heroTopBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  domainChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  domainChipText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.3,
+    textTransform: "uppercase",
+  },
+  closeButton: {
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  closeButtonBlur: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  heroCenter: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  heroGlowOuter: {
+    position: "absolute",
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+  },
+  heroGlowMid: {
+    position: "absolute",
+    width: 182,
+    height: 182,
+    borderRadius: 91,
+  },
+  heroIconShell: {
+    width: 156,
+    height: 156,
+    borderRadius: 78,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 20,
+  },
+  heroTextWrap: {
+    gap: 12,
+  },
+  title: {
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: "800",
+    color: "#F5F7FF",
+    letterSpacing: -0.8,
+  },
+  description: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: "rgba(233,237,247,0.75)",
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  metaItem: {
+    flex: 1,
+    gap: 5,
+  },
+  metaLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 1.3,
+    color: "rgba(233,237,247,0.5)",
+    fontWeight: "700",
+  },
+  metaValue: {
+    fontSize: 15,
+    color: Colors.light.text,
+    fontWeight: "700",
+  },
+  metaDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    minWidth: 8,
+  },
+  contentScroll: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  bannerCard: {
+    borderRadius: 22,
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  bannerBlur: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  regenSection: {
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  regenBlur: {
+    padding: 16,
+    gap: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  regenLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  regenLabel: {
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.6)",
+    fontWeight: "800",
+  },
+  regenInput: {
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: Colors.light.text,
+    borderWidth: 1,
+    minHeight: 64,
+    textAlignVertical: "top",
+  },
+  regenBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  regenBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  challengeCardWrap: {
+    borderRadius: 24,
+    overflow: "hidden",
+  },
+  challengeCardPressed: {
+    opacity: 0.94,
+  },
+  challengeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderRadius: 24,
+    minHeight: 92,
+  },
+  challengeLocked: {
+    opacity: 0.5,
+  },
+  challengeLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 14,
+    paddingRight: 12,
+  },
+  checkOrb: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  challengeTextBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  challengeTitle: {
+    fontSize: 16,
+    lineHeight: 20,
+    color: Colors.light.text,
+    fontWeight: "700",
+  },
+  challengeTitleDone: {
+    color: "rgba(232,235,247,0.55)",
+    textDecorationLine: "line-through",
+  },
+  challengeDetail: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "rgba(232,235,247,0.66)",
+  },
+  challengeRight: {
+    alignItems: "flex-end",
+  },
+  xpPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  xpPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  footerSpace: {
+    height: 28,
+  },
 });
