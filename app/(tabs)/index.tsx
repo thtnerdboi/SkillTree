@@ -4,7 +4,6 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,7 +41,6 @@ import {
   DOMAIN_LABEL,
   SKILL_NODES,
   TREE_LEVELS,
-  getPrestigeBonusLabel,
   getPrestigeRank,
   getUserLevel,
   getXpForCurrentLevel,
@@ -54,6 +52,7 @@ import { ANALYTICS_EVENTS } from "@/utils/event-types";
 import { OnboardingScreens } from "@/components/OnboardingScreens";
 import { NodePanel } from "@/components/NodePanel";
 import { PrestigeModal } from "@/components/PrestigeModal";
+import { PanZoomCanvas } from "@/components/PanZoomCanvas";
 
 type IconComp = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 type TreePoint = { x: number; y: number };
@@ -79,17 +78,23 @@ const ICON_MAP: Record<string, IconComp> = {
   PenTool,
 };
 
-const TREE_TOP_PADDING = 320;
-const LEVEL_SPACING = 330;
-const ORIGIN_BOTTOM_PADDING = 320;
+const TREE_TOP_PADDING = 340;
+const LEVEL_SPACING = 380;
+const ORIGIN_BOTTOM_PADDING = 360;
 const ORIGIN_SIZE = 128;
-const NODE_SIZE = 90;
-const GLOW_SIZE = 156;
-const LABEL_WIDTH = 132;
-const HEADER_HEIGHT = 220;
+const NODE_SIZE = 94;
+const GLOW_SIZE = 170;
+const HEADER_HEIGHT = 232;
+const TAB_BAR_OFFSET = 108;
+const MAP_BOTTOM_PADDING = 228;
+const LINE_GLOW_WIDTH = 10;
+const LINE_CORE_WIDTH = 4.5;
+const LABEL_PILL_WIDTH = 132;
+const LABEL_CONNECTOR_HEIGHT = 16;
+const APP_BACKGROUND = "#080D1A";
 const DOMAIN_BOUNDS: Record<DomainId, [number, number]> = {
   mind: [0.1, 0.3],
-  body: [0.4, 0.6],
+  body: [0.45, 0.55],
   craft: [0.7, 0.9],
 };
 
@@ -149,6 +154,7 @@ function NodeBubble({
   unlocked,
   complete,
   hasProgress,
+  focused,
   onPress,
 }: {
   node: SkillNodeItem;
@@ -156,6 +162,7 @@ function NodeBubble({
   unlocked: boolean;
   complete: boolean;
   hasProgress: boolean;
+  focused: boolean;
   onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -192,7 +199,8 @@ function NodeBubble({
         ]}
       >
         {unlocked ? <GlowLayers color={color} complete={complete} /> : null}
-        <Animated.View style={{ transform: [{ scale }] }}>
+        {focused ? <View pointerEvents="none" style={[styles.focusHalo, { borderColor: alpha(color, "68"), backgroundColor: alpha(color, "12") }]} /> : null}
+        <Animated.View style={{ transform: [{ scale: focused ? Animated.multiply(scale, 1.04) : scale }] }}>
           <Pressable
             testID={`node-${node.id}`}
             onPress={onPress}
@@ -233,15 +241,26 @@ function NodeBubble({
         style={[
           styles.labelWrap,
           {
-            left: point.x - LABEL_WIDTH / 2,
-            top: point.y + NODE_SIZE / 2 + 16,
-            width: LABEL_WIDTH,
+            left: point.x - LABEL_PILL_WIDTH / 2,
+            top: point.y + NODE_SIZE / 2 + 18,
+            width: LABEL_PILL_WIDTH,
           },
         ]}
       >
-        <Text style={[styles.nodeLabel, { color: unlocked ? Colors.light.text : "#66708D" }]} numberOfLines={2}>
-          {node.title}
-        </Text>
+        <View style={[styles.labelConnector, { backgroundColor: unlocked ? alpha(color, "55") : "rgba(255,255,255,0.12)" }]} />
+        <View
+          style={[
+            styles.nodeLabelPill,
+            {
+              backgroundColor: unlocked ? alpha(color, "16") : "rgba(255,255,255,0.05)",
+              borderColor: unlocked ? alpha(color, "28") : "rgba(255,255,255,0.08)",
+            },
+          ]}
+        >
+          <Text style={[styles.nodeLabel, { color: unlocked ? Colors.light.text : "#7480A1" }]} numberOfLines={2}>
+            {node.title}
+          </Text>
+        </View>
       </View>
     </>
   );
@@ -263,17 +282,20 @@ export default function TreeScreen() {
   const [generatingChallenges, setGeneratingChallenges] = useState<boolean>(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<SkillNodeItem | null>(null);
-  const [canvasReady, setCanvasReady] = useState<boolean>(false);
 
   useEffect(() => {
     analytics.track(ANALYTICS_EVENTS.ONBOARDING_STARTED);
   }, []);
 
-  const verticalScrollRef = useRef<ScrollView>(null);
-  const horizontalScrollRef = useRef<ScrollView>(null);
-  const hasCentered = useRef(false);
   const xpFlashAnim = useRef(new Animated.Value(0)).current;
+  const orbTopScaleAnim = useRef(new Animated.Value(1)).current;
+  const orbTopDriftXAnim = useRef(new Animated.Value(0)).current;
+  const orbTopDriftYAnim = useRef(new Animated.Value(0)).current;
+  const orbBottomScaleAnim = useRef(new Animated.Value(1)).current;
+  const orbBottomDriftXAnim = useRef(new Animated.Value(0)).current;
+  const orbBottomDriftYAnim = useRef(new Animated.Value(0)).current;
   const [xpGained, setXpGained] = useState<number>(0);
+  const [focusedNodeId, setFocusedNodeId] = useState<string>("calm");
 
   const flashXP = useCallback(
     (amount: number) => {
@@ -295,10 +317,8 @@ export default function TreeScreen() {
         SKILL_NODES.forEach((node) => {
           allGenerated[node.id] = node.defaultChallenges;
         });
-        console.log("[onboard] Built challenges for", Object.keys(allGenerated).length, "nodes");
         completeOnboarding(answers, allGenerated);
       } catch (error) {
-        console.error("[onboard] Generation failed:", error);
         setGenerateError("Failed to generate. Tap retry.");
       } finally {
         setGeneratingChallenges(false);
@@ -312,34 +332,29 @@ export default function TreeScreen() {
   const xpNext = getXpForNextLevel(currentLevel);
   const xpProgress = xpNext > xpCurrent ? (state.xp - xpCurrent) / (xpNext - xpCurrent) : 1;
   const currentPrestigeRank = getPrestigeRank(state.prestigeCount);
-  const prestigeBonusLabel = getPrestigeBonusLabel(state.prestigeCount);
   const maxTreeLevel = TREE_LEVELS[TREE_LEVELS.length - 1]?.number ?? 1;
-  const canvasWidth = Math.max(width * 2.5, 1100);
+  const canvasWidth = Math.max(width * 3.4, 1680);
   const originY = TREE_TOP_PADDING + maxTreeLevel * LEVEL_SPACING;
   const canvasHeight = originY + ORIGIN_BOTTOM_PADDING;
   const originPoint = useMemo<TreePoint>(() => ({ x: canvasWidth * 0.5, y: originY }), [canvasWidth, originY]);
-
-  const centerOrigin = useCallback(
-    (animated: boolean) => {
-      const x = Math.max(originPoint.x - width / 2, 0);
-      const y = Math.max(originPoint.y - height * 0.62, 0);
-      console.log("[tree] Center origin", { x, y, animated });
-      horizontalScrollRef.current?.scrollTo({ x, y: 0, animated });
-      verticalScrollRef.current?.scrollTo({ x: 0, y, animated });
-    },
-    [height, originPoint.x, originPoint.y, width]
-  );
 
   const nodePositions = useMemo<Record<string, TreePoint>>(() => {
     return SKILL_NODES.reduce<Record<string, TreePoint>>((accumulator, node) => {
       const bounds = DOMAIN_BOUNDS[node.domainId];
       const clampedXFrac = clamp(node.xFrac, bounds[0], bounds[1]);
-      const domainCenter = (bounds[0] + bounds[1]) / 2;
-      const domainDrift = (clampedXFrac - domainCenter) * 0.9;
-      const levelOffset = ((node.levelNumber % 2) - 0.5) * 18;
+      const siblings = SKILL_NODES.filter(
+        (candidate) => candidate.domainId === node.domainId && candidate.levelNumber === node.levelNumber
+      ).sort((left, right) => left.xFrac - right.xFrac);
+      const siblingIndex = Math.max(
+        siblings.findIndex((candidate) => candidate.id === node.id),
+        0
+      );
+      const siblingSpread = siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
+      const levelWave = (node.levelNumber % 2 === 0 ? 1 : -1) * 14;
+      const yOffset = siblingSpread * 124 + levelWave;
       accumulator[node.id] = {
-        x: canvasWidth * (domainCenter + domainDrift),
-        y: originY - node.levelNumber * LEVEL_SPACING + levelOffset,
+        x: canvasWidth * clampedXFrac,
+        y: originY - node.levelNumber * LEVEL_SPACING + yOffset,
       };
       return accumulator;
     }, {});
@@ -352,19 +367,73 @@ export default function TreeScreen() {
     });
   }, []);
 
-  const handleCanvasReady = useCallback(() => {
-    if (!hasCentered.current && state.onboardingComplete) {
-      centerOrigin(false);
-      hasCentered.current = true;
-      setCanvasReady(true);
-    }
-  }, [centerOrigin, state.onboardingComplete]);
+  useEffect(() => {
+    const topAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(orbTopScaleAnim, { toValue: 1.15, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopDriftXAnim, { toValue: -18, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopDriftYAnim, { toValue: 14, duration: 4000, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(orbTopScaleAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopDriftXAnim, { toValue: 8, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopDriftYAnim, { toValue: -10, duration: 4000, useNativeDriver: true }),
+        ]),
+      ])
+    );
+
+    const bottomAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(orbBottomScaleAnim, { toValue: 1.15, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomDriftXAnim, { toValue: 16, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomDriftYAnim, { toValue: -16, duration: 4000, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(orbBottomScaleAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomDriftXAnim, { toValue: -12, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomDriftYAnim, { toValue: 10, duration: 4000, useNativeDriver: true }),
+        ]),
+      ])
+    );
+
+    topAnimation.start();
+    bottomAnimation.start();
+
+    return () => {
+      topAnimation.stop();
+      bottomAnimation.stop();
+    };
+  }, [orbBottomDriftXAnim, orbBottomDriftYAnim, orbBottomScaleAnim, orbTopDriftXAnim, orbTopDriftYAnim, orbTopScaleAnim]);
+
+  const backgroundOrbTopStyle = useMemo(
+    () => ({
+      transform: [
+        { translateX: orbTopDriftXAnim },
+        { translateY: orbTopDriftYAnim },
+        { scale: orbTopScaleAnim },
+      ],
+    }),
+    [orbTopDriftXAnim, orbTopDriftYAnim, orbTopScaleAnim]
+  );
+
+  const backgroundOrbBottomStyle = useMemo(
+    () => ({
+      transform: [
+        { translateX: orbBottomDriftXAnim },
+        { translateY: orbBottomDriftYAnim },
+        { scale: orbBottomScaleAnim },
+      ],
+    }),
+    [orbBottomDriftXAnim, orbBottomDriftYAnim, orbBottomScaleAnim]
+  );
 
   if (!state.isAuthed) {
     return (
       <View style={styles.shell}>
         <SafeAreaView style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.authScroll}>
             <View style={styles.authHero}>
               <Text style={styles.brand}>SkillTree</Text>
               <Text style={styles.authTitle}>Become who{"\n"}you&apos;re meant to be.</Text>
@@ -393,7 +462,7 @@ export default function TreeScreen() {
                 <ChevronRight size={18} color="#060810" strokeWidth={2.5} />
               </TouchableOpacity>
             </BlurView>
-          </ScrollView>
+          </View>
         </SafeAreaView>
       </View>
     );
@@ -412,10 +481,10 @@ export default function TreeScreen() {
   return (
     <View style={styles.shell}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.backgroundOrbTop} pointerEvents="none" />
-        <View style={styles.backgroundOrbBottom} pointerEvents="none" />
+        <Animated.View style={[styles.backgroundOrbTop, backgroundOrbTopStyle]} pointerEvents="none" />
+        <Animated.View style={[styles.backgroundOrbBottom, backgroundOrbBottomStyle]} pointerEvents="none" />
 
-        <View style={styles.headerWrap}>
+        <View style={styles.headerWrap} pointerEvents="box-none">
           <BlurView tint="dark" intensity={80} style={styles.headerBlur}>
             <View style={styles.headerTopRow}>
               <View style={styles.headerLeft}>
@@ -428,30 +497,38 @@ export default function TreeScreen() {
                     </View>
                   ) : null}
                 </View>
-                <Text style={styles.headerSubcopy}>Your growth map is now a wide, scrollable world.</Text>
               </View>
               <ProgressRing completed={completedChallenges} total={totalChallenges} />
             </View>
 
-            <View style={styles.rankRow}>
-              <View
-                style={[
-                  styles.rankPill,
-                  {
-                    borderColor: alpha(currentPrestigeRank.color, "38"),
-                    backgroundColor: alpha(currentPrestigeRank.color, "14"),
-                  },
-                ]}
-              >
+            <View style={styles.headerStatsRow}>
+              <View style={styles.headerPrimaryStat}>
+                <Text style={styles.headerStatEyebrow}>Completed</Text>
+                <Text style={styles.headerStatValue}>{completedChallenges}<Text style={styles.headerStatMuted}>/{totalChallenges}</Text></Text>
+              </View>
+              <View style={styles.headerStatDivider} />
+              <View style={styles.headerPrimaryStat}>
+                <Text style={styles.headerStatEyebrow}>Level</Text>
+                <Text style={styles.headerStatValue}>LV{currentLevel}</Text>
+              </View>
+              <View style={[styles.rankPill, { borderColor: alpha(currentPrestigeRank.color, "38"), backgroundColor: alpha(currentPrestigeRank.color, "14") }]}>
                 <Trophy size={12} color={currentPrestigeRank.color} strokeWidth={2.2} />
                 <Text style={[styles.rankPillText, { color: currentPrestigeRank.color }]}>{currentPrestigeRank.name}</Text>
               </View>
-              <Text style={styles.rankHint}>{prestigeBonusLabel}</Text>
             </View>
 
             <View style={styles.legendWrap}>
               {(["mind", "body", "craft"] as const).map((domain) => (
-                <View key={domain} style={styles.legendItem}>
+                <View
+                  key={domain}
+                  style={[
+                    styles.legendItem,
+                    {
+                      backgroundColor: alpha(DOMAIN_COLOR[domain], "14"),
+                      borderColor: alpha(DOMAIN_COLOR[domain], "24"),
+                    },
+                  ]}
+                >
                   <View style={[styles.legendDot, { backgroundColor: DOMAIN_COLOR[domain] }]} />
                   <Text style={styles.legendLabel}>{DOMAIN_LABEL[domain]}</Text>
                 </View>
@@ -459,12 +536,12 @@ export default function TreeScreen() {
             </View>
 
             <View style={styles.xpBarWrap}>
-              <View style={styles.xpBarTrack}>
-                <View style={[styles.xpBarFill, { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` }]} />
-              </View>
               <Text style={styles.xpBarLabel}>
                 LV{currentLevel} · {Math.max(0, state.xp - xpCurrent)} / {Math.max(0, xpNext - xpCurrent)} XP to next level
               </Text>
+              <View style={styles.xpBarTrack}>
+                <View style={[styles.xpBarFill, { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` }]} />
+              </View>
             </View>
           </BlurView>
         </View>
@@ -476,144 +553,129 @@ export default function TreeScreen() {
           </BlurView>
         </Animated.View>
 
-        <ScrollView
-          ref={verticalScrollRef}
-          style={styles.verticalScroll}
-          contentContainerStyle={{ paddingTop: HEADER_HEIGHT, paddingBottom: 180 }}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={handleCanvasReady}
-          testID="tree-vertical-scroll"
-        >
-          <ScrollView
-            ref={horizontalScrollRef}
-            horizontal
-            bounces
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ width: canvasWidth }}
-            testID="tree-horizontal-scroll"
-          >
-            <View style={{ width: canvasWidth, height: canvasHeight }}>
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.originAura,
-                  {
-                    left: originPoint.x - 170,
-                    top: originPoint.y - 170,
-                  },
-                ]}
-              />
+        {/* CAMERA ENGINE */}
+        <View style={{ flex: 1, overflow: 'hidden' }}>
+          <PanZoomCanvas canvasWidth={canvasWidth} canvasHeight={canvasHeight}>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.originAura,
+                {
+                  left: originPoint.x - 170,
+                  top: originPoint.y - 170,
+                },
+              ]}
+            />
 
-              <Svg width={canvasWidth} height={canvasHeight} style={StyleSheet.absoluteFillObject} pointerEvents="none">
-                {connections.map(({ parentId, nodeId }) => {
-                  const parentPoint = parentId === "origin" ? originPoint : nodePositions[parentId];
-                  const childPoint = nodePositions[nodeId];
-                  const childNode = SKILL_NODES.find((node) => node.id === nodeId);
+            <Svg width={canvasWidth} height={canvasHeight} style={StyleSheet.absoluteFillObject} pointerEvents="none">
+              {connections.map(({ parentId, nodeId }) => {
+                const parentPoint = parentId === "origin" ? originPoint : nodePositions[parentId];
+                const childPoint = nodePositions[nodeId];
+                const childNode = SKILL_NODES.find((node) => node.id === nodeId);
 
-                  if (!parentPoint || !childPoint || !childNode) {
-                    return null;
-                  }
-
-                  const connectorActive = isNodeUnlocked(childNode.id) || isNodeComplete(parentId);
-                  const color = DOMAIN_COLOR[childNode.domainId];
-                  const dx = childPoint.x - parentPoint.x;
-                  const dy = childPoint.y - parentPoint.y;
-                  const controlOffsetX = dx * 0.32;
-                  const controlOffsetY = Math.max(Math.abs(dy) * 0.18, 44);
-                  const path = `M ${parentPoint.x} ${parentPoint.y} C ${parentPoint.x + controlOffsetX} ${parentPoint.y - controlOffsetY}, ${childPoint.x - controlOffsetX} ${childPoint.y + controlOffsetY}, ${childPoint.x} ${childPoint.y}`;
-
-                  return (
-                    <Path
-                      key={`${parentId}-${nodeId}`}
-                      d={path}
-                      stroke={connectorActive ? alpha(color, "55") : "rgba(255,255,255,0.07)"}
-                      strokeWidth={connectorActive ? 3 : 2}
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                  );
-                })}
-              </Svg>
-
-              <View
-                style={[
-                  styles.originWrap,
-                  {
-                    left: originPoint.x - GLOW_SIZE / 2,
-                    top: originPoint.y - GLOW_SIZE / 2,
-                  },
-                ]}
-                pointerEvents="none"
-              >
-                <GlowLayers color={Colors.light.tint} complete />
-                <View style={styles.originNode}>
-                  <View style={styles.originNodeInner}>
-                    <Zap size={38} color={Colors.light.tint} strokeWidth={2.2} />
-                  </View>
-                </View>
-              </View>
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.labelWrap,
-                  {
-                    left: originPoint.x - LABEL_WIDTH / 2,
-                    top: originPoint.y + ORIGIN_SIZE / 2 + 18,
-                    width: LABEL_WIDTH,
-                  },
-                ]}
-              >
-                <Text style={[styles.nodeLabel, styles.originLabel]}>Origin</Text>
-              </View>
-
-              {SKILL_NODES.map((node) => {
-                const point = nodePositions[node.id];
-                const unlocked = isNodeUnlocked(node.id);
-                const complete = isNodeComplete(node.id);
-                const challenges = (state.aiChallenges[node.id] ?? []).length > 0 ? state.aiChallenges[node.id] : node.defaultChallenges;
-                const completedCount = challenges.filter((challenge) => state.challengeProgress[challenge.id]).length;
-                const hasProgress = completedCount > 0 && !complete;
-
-                if (!point) {
+                if (!parentPoint || !childPoint || !childNode) {
                   return null;
                 }
 
-                return (
-                  <NodeBubble
-                    key={node.id}
-                    node={node}
-                    point={point}
-                    unlocked={unlocked}
-                    complete={complete}
-                    hasProgress={hasProgress}
-                    onPress={async () => {
-                      if (!unlocked) {
-                        return;
-                      }
+                const connectorActive = isNodeUnlocked(childNode.id) || isNodeComplete(parentId);
+                const color = DOMAIN_COLOR[childNode.domainId];
+                const dx = childPoint.x - parentPoint.x;
+                const dy = childPoint.y - parentPoint.y;
+                const controlOffsetX = dx * 0.32;
+                const controlOffsetY = Math.max(Math.abs(dy) * 0.18, 44);
+                const path = `M ${parentPoint.x} ${parentPoint.y} C ${parentPoint.x + controlOffsetX} ${parentPoint.y - controlOffsetY}, ${childPoint.x - controlOffsetX} ${childPoint.y + controlOffsetY}, ${childPoint.x} ${childPoint.y}`;
 
-                      console.log("[tree] Open node", node.id);
-                      await Haptics.selectionAsync();
-                      setSelectedNode(node);
-                    }}
-                  />
+                return (
+                  <React.Fragment key={`${parentId}-${nodeId}`}>
+                    {connectorActive ? (
+                      <Path
+                        d={path}
+                        stroke={alpha(color, "1E")}
+                        strokeWidth={LINE_GLOW_WIDTH}
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    ) : null}
+                    <Path
+                      d={path}
+                      stroke={connectorActive ? alpha(color, "75") : "rgba(255,255,255,0.11)"}
+                      strokeWidth={connectorActive ? LINE_CORE_WIDTH : 3}
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                  </React.Fragment>
                 );
               })}
-            </View>
-          </ScrollView>
-        </ScrollView>
+            </Svg>
 
-        {canvasReady ? (
-          <Pressable
-            style={styles.centerButtonWrap}
-            onPress={() => centerOrigin(true)}
-            testID="center-origin-button"
-          >
-            <BlurView tint="dark" intensity={82} style={styles.centerButton}>
-              <Zap size={16} color={Colors.light.tint} strokeWidth={2.4} />
-              <Text style={styles.centerButtonText}>Center Origin</Text>
-            </BlurView>
-          </Pressable>
-        ) : null}
+            <View
+              style={[
+                styles.originWrap,
+                {
+                  left: originPoint.x - GLOW_SIZE / 2,
+                  top: originPoint.y - GLOW_SIZE / 2,
+                },
+              ]}
+              pointerEvents="none"
+            >
+              <GlowLayers color={Colors.light.tint} complete />
+              {focusedNodeId === "origin" ? <View style={styles.originFocusHalo} /> : null}
+              <View style={styles.originNode}>
+                <View style={styles.originNodeInner}>
+                  <Zap size={38} color={Colors.light.tint} strokeWidth={2.2} />
+                </View>
+              </View>
+            </View>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.labelWrap,
+                {
+                  left: originPoint.x - LABEL_PILL_WIDTH / 2,
+                  top: originPoint.y + ORIGIN_SIZE / 2 + 18,
+                  width: LABEL_PILL_WIDTH,
+                },
+              ]}
+            >
+              <View style={[styles.labelConnector, { backgroundColor: alpha(Colors.light.tint, "65") }]} />
+              <View style={[styles.nodeLabelPill, styles.originLabelPill]}>
+                <Text style={[styles.nodeLabel, styles.originLabel]}>Origin</Text>
+              </View>
+            </View>
+
+            {SKILL_NODES.map((node) => {
+              const point = nodePositions[node.id];
+              const unlocked = isNodeUnlocked(node.id);
+              const complete = isNodeComplete(node.id);
+              const challenges = (state.aiChallenges[node.id] ?? []).length > 0 ? state.aiChallenges[node.id] : node.defaultChallenges;
+              const completedCount = challenges.filter((challenge) => state.challengeProgress[challenge.id]).length;
+              const hasProgress = completedCount > 0 && !complete;
+
+              if (!point) {
+                return null;
+              }
+
+              return (
+                <NodeBubble
+                  key={node.id}
+                  node={node}
+                  point={point}
+                  unlocked={unlocked}
+                  complete={complete}
+                  hasProgress={hasProgress}
+                  focused={focusedNodeId === node.id}
+                  onPress={async () => {
+                    if (!unlocked) {
+                      return;
+                    }
+                    await Haptics.selectionAsync();
+                    setSelectedNode(node);
+                  }}
+                />
+              );
+            })}
+          </PanZoomCanvas>
+        </View>
 
         {selectedNode ? (
           <NodePanel
@@ -643,19 +705,19 @@ const ringStyles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
   },
   inner: { position: "absolute", alignItems: "center" },
-  pct: { fontSize: 15, fontWeight: "900", color: Colors.light.text },
-  count: { fontSize: 10, fontWeight: "700", color: Colors.light.muted },
+  pct: { fontFamily: "OutfitExtraBold", fontSize: 15, color: Colors.light.text },
+  count: { fontFamily: "OutfitSemiBold", fontSize: 10, color: Colors.light.muted },
 });
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: "#05070D" },
+  shell: { flex: 1, backgroundColor: APP_BACKGROUND },
   safeArea: { flex: 1 },
   backgroundOrbTop: {
     position: "absolute",
     width: 360,
     height: 360,
     borderRadius: 180,
-    backgroundColor: "rgba(93,225,255,0.07)",
+    backgroundColor: "rgba(93,225,255,0.09)",
     top: -120,
     right: -80,
   },
@@ -664,21 +726,21 @@ const styles = StyleSheet.create({
     width: 320,
     height: 320,
     borderRadius: 160,
-    backgroundColor: "rgba(167,139,250,0.08)",
+    backgroundColor: "rgba(167,139,250,0.09)",
     bottom: -80,
     left: -90,
   },
   authScroll: { padding: 24, paddingTop: 52, gap: 28, flexGrow: 1 },
   authHero: { gap: 12 },
   brand: {
+    fontFamily: "OutfitBlack",
     fontSize: 11,
     letterSpacing: 3.5,
     color: Colors.light.tint,
-    fontWeight: "700",
     textTransform: "uppercase",
   },
-  authTitle: { fontSize: 40, fontWeight: "800", color: Colors.light.text, lineHeight: 46 },
-  authSub: { fontSize: 15, color: Colors.light.muted, lineHeight: 24 },
+  authTitle: { fontFamily: "OutfitExtraBold", fontSize: 40, color: Colors.light.text, lineHeight: 46 },
+  authSub: { fontFamily: "Outfit", fontSize: 15, color: Colors.light.muted, lineHeight: 24 },
   authCard: {
     borderRadius: 28,
     padding: 22,
@@ -689,13 +751,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.04)",
   },
   authCardLabel: {
+    fontFamily: "OutfitBold",
     fontSize: 12,
     letterSpacing: 1.5,
     textTransform: "uppercase",
     color: Colors.light.muted,
-    fontWeight: "700",
   },
   authInput: {
+    fontFamily: "Outfit",
     backgroundColor: "rgba(9,12,20,0.88)",
     borderRadius: 16,
     paddingHorizontal: 16,
@@ -715,7 +778,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryBtnDisabled: { opacity: 0.35 },
-  primaryBtnText: { fontSize: 16, fontWeight: "800", color: "#060810", letterSpacing: 0.3 },
+  primaryBtnText: { fontFamily: "OutfitExtraBold", fontSize: 16, color: "#060810", letterSpacing: 0.3 },
   headerWrap: {
     position: "absolute",
     top: 0,
@@ -730,10 +793,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 14,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    paddingBottom: 16,
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.1)",
   },
   headerTopRow: {
     flexDirection: "row",
@@ -743,8 +806,7 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flex: 1 },
   greetingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  greeting: { fontSize: 28, fontWeight: "800", color: Colors.light.text, letterSpacing: -0.8 },
-  headerSubcopy: { marginTop: 8, fontSize: 13, lineHeight: 18, color: "rgba(232,235,247,0.7)" },
+  greeting: { fontFamily: "OutfitExtraBold", fontSize: 28, color: "#F8FAFF", letterSpacing: -0.8 },
   proBadge: {
     backgroundColor: Colors.light.tint,
     borderRadius: 999,
@@ -752,8 +814,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     alignSelf: "center",
   },
-  proBadgeText: { fontSize: 10, fontWeight: "900", color: "#060810", letterSpacing: 1 },
-  rankRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 14 },
+  proBadgeText: { fontFamily: "OutfitBlack", fontSize: 10, color: "#060810", letterSpacing: 1 },
+  headerStatsRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16 },
+  headerPrimaryStat: { flex: 1, gap: 4 },
+  headerStatEyebrow: { fontFamily: "OutfitBold", fontSize: 11, color: "#97A3C8", textTransform: "uppercase", letterSpacing: 1.3 },
+  headerStatValue: { fontFamily: "OutfitBlack", fontSize: 24, color: "#F8FAFF", letterSpacing: -0.6 },
+  headerStatMuted: { fontFamily: "OutfitBold", color: "#9AA4C8" },
+  headerStatDivider: { width: 1, alignSelf: "stretch", backgroundColor: "rgba(255,255,255,0.12)" },
   rankPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -763,9 +830,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  rankPillText: { fontSize: 11, fontWeight: "800" },
-  rankHint: { fontSize: 11, color: Colors.light.muted, fontWeight: "600" },
-  legendWrap: { flexDirection: "row", gap: 10, marginTop: 14 },
+  rankPillText: { fontFamily: "OutfitExtraBold", fontSize: 11 },
+  legendWrap: { flexDirection: "row", gap: 10, marginTop: 16 },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -773,16 +839,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
   },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 12, fontWeight: "700", color: Colors.light.muted },
-  xpBarWrap: { marginTop: 14, gap: 6 },
-  xpBarTrack: { height: 8, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 999, overflow: "hidden" },
+  legendDot: { width: 12, height: 12, borderRadius: 6 },
+  legendLabel: { fontFamily: "OutfitExtraBold", fontSize: 12, color: "#E6ECFF" },
+  xpBarWrap: { marginTop: 16, gap: 8 },
+  xpBarTrack: { height: 11, backgroundColor: "rgba(255,255,255,0.11)", borderRadius: 999, overflow: "hidden" },
   xpBarFill: { height: "100%", backgroundColor: Colors.light.tint, borderRadius: 999 },
-  xpBarLabel: { fontSize: 11, color: "#97A1C3", fontWeight: "700" },
+  xpBarLabel: { fontFamily: "OutfitExtraBold", fontSize: 14, color: "#E8F5FF" },
   xpFlash: {
     position: "absolute",
     top: HEADER_HEIGHT - 18,
@@ -803,8 +867,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  xpFlashText: { fontSize: 14, fontWeight: "800", color: Colors.light.tint },
-  verticalScroll: { flex: 1 },
+  xpFlashText: { fontFamily: "OutfitExtraBold", fontSize: 14, color: Colors.light.tint },
   originAura: {
     position: "absolute",
     width: 340,
@@ -818,6 +881,16 @@ const styles = StyleSheet.create({
     height: GLOW_SIZE,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 3,
+  },
+  originFocusHalo: {
+    position: "absolute",
+    width: GLOW_SIZE + 16,
+    height: GLOW_SIZE + 16,
+    borderRadius: (GLOW_SIZE + 16) / 2,
+    borderWidth: 1.5,
+    borderColor: alpha(Colors.light.tint, "70"),
+    backgroundColor: alpha(Colors.light.tint, "10"),
   },
   originNode: {
     width: ORIGIN_SIZE,
@@ -845,6 +918,7 @@ const styles = StyleSheet.create({
     height: GLOW_SIZE,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 3,
   },
   glowOuter: {
     position: "absolute",
@@ -865,6 +939,13 @@ const styles = StyleSheet.create({
     borderRadius: 52,
     borderWidth: 1,
     backgroundColor: "transparent",
+  },
+  focusHalo: {
+    position: "absolute",
+    width: GLOW_SIZE + 14,
+    height: GLOW_SIZE + 14,
+    borderRadius: (GLOW_SIZE + 14) / 2,
+    borderWidth: 1.5,
   },
   nodeCore: {
     alignItems: "center",
@@ -919,33 +1000,18 @@ const styles = StyleSheet.create({
     top: -6,
     right: -4,
   },
-  completeBadgeCheck: { fontSize: 10, fontWeight: "900", color: "#000" },
-  labelWrap: { position: "absolute", alignItems: "center" },
-  nodeLabel: { fontSize: 13, fontWeight: "800", textAlign: "center", lineHeight: 16 },
-  originLabel: { color: Colors.light.text, fontSize: 16 },
-  centerButtonWrap: {
-    position: "absolute",
-    right: 18,
-    bottom: 96,
-    zIndex: 25,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  centerButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 999,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.08)",
+  completeBadgeCheck: { fontFamily: "OutfitBlack", fontSize: 10, color: "#000" },
+  labelWrap: { position: "absolute", alignItems: "center", zIndex: 4 },
+  labelConnector: { width: 3, height: LABEL_CONNECTOR_HEIGHT, borderRadius: 999, marginBottom: 8 },
+  nodeLabelPill: {
+    minHeight: 38,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    justifyContent: "center",
   },
-  centerButtonText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: Colors.light.text,
-  },
+  nodeLabel: { fontFamily: "OutfitExtraBold", fontSize: 13, textAlign: "center", lineHeight: 17 },
+  originLabelPill: { backgroundColor: alpha(Colors.light.tint, "16"), borderColor: alpha(Colors.light.tint, "2A") },
+  originLabel: { color: Colors.light.text, fontSize: 16 },
 });

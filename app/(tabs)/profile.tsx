@@ -79,6 +79,7 @@ export default function ProfileScreen() {
   };
 
   const avatarLetter = (state.displayName || "A").charAt(0).toUpperCase();
+  const currentPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount);
   const nextPrestige = getPrestigeRank(state.prestigeCount + 1);
   const nextPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount + 1);
 
@@ -125,7 +126,7 @@ export default function ProfileScreen() {
                       testID="edit-name-input"
                     />
                     <TouchableOpacity onPress={handleSaveName} testID="save-name">
-                      <CheckCircle size={20} color={Colors.light.tint} strokeWidth={2} />
+                      <CheckCircle size={20} color={Colors.light.tint} strokeWidth={2.5} />
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -138,11 +139,11 @@ export default function ProfileScreen() {
                     testID="edit-name"
                   >
                     <Text style={styles.heroName}>{state.displayName || "Adventurer"}</Text>
-                    <Edit2 size={14} color={Colors.light.muted} strokeWidth={2} />
+                    <Edit2 size={14} color={Colors.light.muted} strokeWidth={2.5} />
                   </Pressable>
                 )}
                 <View style={[styles.rankChip, { backgroundColor: `${prestigeRank.color}15`, borderColor: `${prestigeRank.color}40` }]}>
-                  <Shield size={11} color={prestigeRank.color} strokeWidth={2} />
+                  <Shield size={11} color={prestigeRank.color} strokeWidth={2.5} />
                   <Text style={[styles.rankChipText, { color: prestigeRank.color }]}>
                     {prestigeRank.name}
                   </Text>
@@ -167,34 +168,47 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>RANK BONUSES</Text>
+            <View style={styles.prestigeBonusRow}>
+              <View style={[styles.prestigeBonusOrb, { backgroundColor: `${prestigeRank.color}15`, borderColor: `${prestigeRank.color}35` }]}>
+                <Shield size={18} color={prestigeRank.color} strokeWidth={2.5} />
+              </View>
+              <View style={styles.prestigeBonusInfo}>
+                <Text style={styles.prestigeBonusLabel}>Current rank bonus</Text>
+                <Text style={styles.prestigeBonusValue}>{prestigeRank.name} · {currentPrestigeBonus}</Text>
+              </View>
+            </View>
+          </View>
+
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Zap size={18} color={Colors.light.tint} strokeWidth={2} />
+              <Zap size={18} color={Colors.light.tint} strokeWidth={2.5} />
               <Text style={styles.statValue}>{state.xp.toLocaleString()}</Text>
               <Text style={styles.statLabel}>Total XP</Text>
             </View>
             <View style={styles.statCard}>
-              <Trophy size={18} color="#FFD700" strokeWidth={2} />
+              <Trophy size={18} color="#FFD700" strokeWidth={2.5} />
               <Text style={styles.statValue}>{state.prestigeCount}</Text>
               <Text style={styles.statLabel}>Prestiges</Text>
             </View>
             <View style={styles.statCard}>
-              <Target size={18} color={Colors.light.success} strokeWidth={2} />
+              <Target size={18} color={Colors.light.success} strokeWidth={2.5} />
               <Text style={styles.statValue}>{completedNodes}</Text>
               <Text style={styles.statLabel}>Nodes Done</Text>
             </View>
             <View style={styles.statCard}>
-              <CheckCircle size={18} color="#A78BFA" strokeWidth={2} />
+              <CheckCircle size={18} color="#A78BFA" strokeWidth={2.5} />
               <Text style={styles.statValue}>{completedChallenges}</Text>
               <Text style={styles.statLabel}>Challenges</Text>
             </View>
             <View style={styles.statCard}>
-              <Star size={18} color="#FF6A4D" strokeWidth={2} />
+              <Star size={18} color="#FF6A4D" strokeWidth={2.5} />
               <Text style={styles.statValue}>{completedLevels}</Text>
               <Text style={styles.statLabel}>Levels Done</Text>
             </View>
             <View style={styles.statCard}>
-              <Award size={18} color={Colors.light.tint} strokeWidth={2} />
+              <Award size={18} color={Colors.light.tint} strokeWidth={2.5} />
               <Text style={styles.statValue}>{weeklyCompletion}%</Text>
               <Text style={styles.statLabel}>Weekly</Text>
             </View>
@@ -250,7 +264,7 @@ export default function ProfileScreen() {
               <Text style={styles.sectionTitle}>NEXT PRESTIGE</Text>
               <View style={styles.nextPrestigeRow}>
                 <View style={[styles.nextPrestigeOrb, { backgroundColor: `${nextPrestige.color}15`, borderColor: `${nextPrestige.color}40` }]}>
-                  <Trophy size={20} color={nextPrestige.color} strokeWidth={2} />
+                  <Trophy size={20} color={nextPrestige.color} strokeWidth={2.5} />
                 </View>
                 <View style={styles.nextPrestigeInfo}>
                   <Text style={[styles.nextPrestigeName, { color: nextPrestige.color }]}>{nextPrestige.name}</Text>
@@ -263,7 +277,7 @@ export default function ProfileScreen() {
             <View style={styles.proCard}>
               <View style={styles.proCardTop}>
                 <View style={styles.proCrownWrap}>
-                  <Crown size={22} color="#FFD700" strokeWidth={2} />
+                  <Crown size={22} color="#FFD700" strokeWidth={2.5} />
                 </View>
                 <View style={styles.proCardInfo}>
                   <Text style={styles.proCardTitle}>SkillTree Pro</Text>
@@ -294,7 +308,7 @@ export default function ProfileScreen() {
 
           {state.isPro && (
             <View style={styles.proActiveCard}>
-              <Crown size={18} color="#FFD700" strokeWidth={2} />
+              <Crown size={18} color="#FFD700" strokeWidth={2.5} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.proActiveTitle}>Pro Active</Text>
                 <Text style={styles.proActiveSub}>Enjoying 1.5× XP & no ads</Text>
@@ -315,7 +329,7 @@ export default function ProfileScreen() {
                 testID="watch-ad"
               >
                 <View style={styles.adRewardLeft}>
-                  <Zap size={18} color={adWatchCooldown ? "#2A3560" : Colors.light.tint} strokeWidth={2} />
+                  <Zap size={18} color={adWatchCooldown ? "#2A3560" : Colors.light.tint} strokeWidth={2.5} />
                   <View>
                     <Text style={[styles.adRewardTitle, adWatchCooldown && { color: "#2A3560" }]}>
                       {adWatchCooldown ? "Come back soon" : "Watch ad for +100 XP"}
@@ -325,7 +339,7 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                <ChevronRight size={16} color={adWatchCooldown ? "#2A3560" : Colors.light.muted} strokeWidth={2} />
+                <ChevronRight size={16} color={adWatchCooldown ? "#2A3560" : Colors.light.muted} strokeWidth={2.5} />
               </TouchableOpacity>
             </View>
           )}
@@ -337,7 +351,7 @@ export default function ProfileScreen() {
             onPress={signOut}
             testID="sign-out"
           >
-            <LogOut size={15} color="#FF6A4D" strokeWidth={2} />
+            <LogOut size={15} color="#FF6A4D" strokeWidth={2.5} />
             <Text style={styles.signOutText}>Sign Out & Reset</Text>
           </TouchableOpacity>
 
@@ -355,95 +369,100 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: "#060810" },
   safeArea: { flex: 1 },
-  scroll: { padding: 22, paddingBottom: 50, gap: 14 },
+  scroll: { padding: 22, paddingBottom: 110, gap: 14 },
 
   header: { paddingBottom: 4 },
-  brand: { fontSize: 11, letterSpacing: 3.5, color: Colors.light.tint, fontWeight: "700", textTransform: "uppercase" },
-  pageTitle: { fontSize: 30, fontWeight: "900", color: Colors.light.text, marginTop: 4 },
+  brand: { fontFamily: "OutfitBlack", fontSize: 11, letterSpacing: 3.5, color: Colors.light.tint, textTransform: "uppercase" },
+  pageTitle: { fontFamily: "OutfitBlack", fontSize: 30, color: Colors.light.text, marginTop: 4 },
 
   heroCard: { backgroundColor: "#0C1120", borderRadius: 24, padding: 20, gap: 20, borderWidth: 1, borderColor: "#1A2238" },
   heroTop: { flexDirection: "row", gap: 16, alignItems: "flex-start" },
   avatar: { width: 70, height: 70, borderRadius: 35, backgroundColor: `${Colors.light.tint}15`, borderWidth: 2, alignItems: "center", justifyContent: "center", position: "relative" },
-  avatarLetter: { fontSize: 30, fontWeight: "900", color: Colors.light.tint },
+  avatarLetter: { fontFamily: "OutfitBlack", fontSize: 30, color: Colors.light.tint },
   avatarPrestigeBadge: { position: "absolute", bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  avatarPrestigeNum: { fontSize: 11, fontWeight: "900", color: "#060810" },
+  avatarPrestigeNum: { fontFamily: "OutfitBlack", fontSize: 11, color: "#060810" },
 
   heroInfo: { flex: 1, gap: 6 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  heroName: { fontSize: 22, fontWeight: "900", color: Colors.light.text },
+  heroName: { fontFamily: "OutfitBlack", fontSize: 22, color: Colors.light.text },
   nameEditRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  nameInput: { flex: 1, fontSize: 22, fontWeight: "900", color: Colors.light.text, backgroundColor: "#080B14", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.light.tint },
+  nameInput: { fontFamily: "OutfitBlack", flex: 1, fontSize: 22, color: Colors.light.text, backgroundColor: "#080B14", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.light.tint },
   rankChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, alignSelf: "flex-start" },
-  rankChipText: { fontSize: 12, fontWeight: "700" },
-  inviteCode: { fontSize: 11, color: "#2A3560", fontWeight: "600", letterSpacing: 1 },
+  rankChipText: { fontFamily: "OutfitBold", fontSize: 12 },
+  inviteCode: { fontFamily: "OutfitSemiBold", fontSize: 11, color: "#2A3560", letterSpacing: 1 },
 
   levelRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   levelInfo: { alignItems: "center" },
-  levelLabel: { fontSize: 9, letterSpacing: 2, color: Colors.light.muted, fontWeight: "700", textTransform: "uppercase" },
-  levelNum: { fontSize: 32, fontWeight: "900", color: Colors.light.text, lineHeight: 36 },
+  levelLabel: { fontFamily: "OutfitBold", fontSize: 9, letterSpacing: 2, color: Colors.light.muted, textTransform: "uppercase" },
+  levelNum: { fontFamily: "OutfitBlack", fontSize: 32, color: Colors.light.text, lineHeight: 36 },
   xpBarSection: { flex: 1, gap: 6 },
   xpBarTrack: { height: 6, backgroundColor: "#111828", borderRadius: 3, overflow: "hidden" },
   xpBarFill: { height: "100%", backgroundColor: Colors.light.tint, borderRadius: 3 },
-  xpBarLabel: { fontSize: 11, color: Colors.light.muted, fontWeight: "500" },
+  xpBarLabel: { fontFamily: "OutfitSemiBold", fontSize: 11, color: Colors.light.muted },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   statCard: { flex: 1, minWidth: "30%", backgroundColor: "#0C1120", borderRadius: 18, padding: 16, gap: 6, alignItems: "center", borderWidth: 1, borderColor: "#1A2238" },
-  statValue: { fontSize: 22, fontWeight: "900", color: Colors.light.text },
-  statLabel: { fontSize: 10, color: Colors.light.muted, fontWeight: "600", textAlign: "center" },
+  statValue: { fontFamily: "OutfitBlack", fontSize: 22, color: Colors.light.text },
+  statLabel: { fontFamily: "OutfitSemiBold", fontSize: 10, color: Colors.light.muted, textAlign: "center" },
 
   sectionCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 14, borderWidth: 1, borderColor: "#1A2238" },
-  sectionTitle: { fontSize: 10, letterSpacing: 2.5, textTransform: "uppercase", color: Colors.light.muted, fontWeight: "700" },
+  sectionTitle: { fontFamily: "OutfitBold", fontSize: 10, letterSpacing: 2.5, textTransform: "uppercase", color: Colors.light.muted },
 
   domainRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   domainDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  domainLabel: { fontSize: 13, fontWeight: "700", color: Colors.light.text, width: 44 },
+  domainLabel: { fontFamily: "OutfitBold", fontSize: 13, color: Colors.light.text, width: 44 },
   domainBarTrack: { flex: 1, height: 5, backgroundColor: "#111828", borderRadius: 3, overflow: "hidden" },
   domainBarFill: { height: "100%", borderRadius: 3 },
-  domainStat: { fontSize: 12, fontWeight: "700", width: 30, textAlign: "right" },
+  domainStat: { fontFamily: "OutfitBold", fontSize: 12, width: 30, textAlign: "right" },
 
   levelProgressRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   levelBadge: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  levelBadgeText: { fontSize: 12, fontWeight: "900" },
+  levelBadgeText: { fontFamily: "OutfitBlack", fontSize: 12 },
   levelProgressInfo: { flex: 1, gap: 5 },
-  levelProgressTitle: { fontSize: 13, fontWeight: "700", color: Colors.light.text },
+  levelProgressTitle: { fontFamily: "OutfitBold", fontSize: 13, color: Colors.light.text },
   levelProgressBar: { height: 4, backgroundColor: "#111828", borderRadius: 2, overflow: "hidden" },
   levelProgressFill: { height: "100%", borderRadius: 2 },
-  levelProgressStat: { fontSize: 12, fontWeight: "700", color: Colors.light.muted, width: 28, textAlign: "right" },
+  levelProgressStat: { fontFamily: "OutfitBold", fontSize: 12, color: Colors.light.muted, width: 28, textAlign: "right" },
 
+  prestigeBonusRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  prestigeBonusOrb: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  prestigeBonusInfo: { flex: 1, gap: 4 },
+  prestigeBonusLabel: { fontFamily: "OutfitBold", fontSize: 11, letterSpacing: 1.1, textTransform: "uppercase", color: Colors.light.muted },
+  prestigeBonusValue: { fontFamily: "OutfitExtraBold", fontSize: 16, color: Colors.light.text },
   nextPrestigeRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   nextPrestigeOrb: { width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
   nextPrestigeInfo: { flex: 1, gap: 4 },
-  nextPrestigeName: { fontSize: 18, fontWeight: "900" },
-  nextPrestigeHint: { fontSize: 12, color: Colors.light.muted, fontWeight: "500" },
+  nextPrestigeName: { fontFamily: "OutfitBlack", fontSize: 18 },
+  nextPrestigeHint: { fontFamily: "OutfitSemiBold", fontSize: 12, color: Colors.light.muted },
 
   adRewardBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#080B14", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: `${Colors.light.tint}25` },
   adRewardBtnDisabled: { borderColor: "#1A2238" },
   adRewardLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  adRewardTitle: { fontSize: 14, fontWeight: "700", color: Colors.light.text },
-  adRewardSub: { fontSize: 11, color: Colors.light.muted, marginTop: 2 },
+  adRewardTitle: { fontFamily: "OutfitBold", fontSize: 14, color: Colors.light.text },
+  adRewardSub: { fontFamily: "Outfit", fontSize: 11, color: Colors.light.muted, marginTop: 2 },
 
   signOutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#FF6A4D10", borderRadius: 16, paddingVertical: 14, borderWidth: 1, borderColor: "#FF6A4D25" },
-  signOutText: { fontSize: 14, fontWeight: "700", color: "#FF6A4D" },
+  signOutText: { fontFamily: "OutfitBold", fontSize: 14, color: "#FF6A4D" },
 
-  footer: { textAlign: "center", fontSize: 11, color: "#1A2238", fontWeight: "600", letterSpacing: 1, paddingTop: 4 },
+  footer: { fontFamily: "OutfitSemiBold", textAlign: "center", fontSize: 11, color: "#1A2238", letterSpacing: 1, paddingTop: 4 },
 
   proCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 16, borderWidth: 1.5, borderColor: "#FFD70040" },
   proCardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   proCrownWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFD70015", borderWidth: 1.5, borderColor: "#FFD70040", alignItems: "center", justifyContent: "center" },
   proCardInfo: { flex: 1 },
-  proCardTitle: { fontSize: 17, fontWeight: "900", color: Colors.light.text },
-  proCardSub: { fontSize: 12, color: Colors.light.muted, marginTop: 2, fontWeight: "500" },
+  proCardTitle: { fontFamily: "OutfitBlack", fontSize: 17, color: Colors.light.text },
+  proCardSub: { fontFamily: "OutfitSemiBold", fontSize: 12, color: Colors.light.muted, marginTop: 2 },
   proBadge: { backgroundColor: "#FFD700", borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4 },
-  proBadgeText: { fontSize: 10, fontWeight: "900", color: "#060810", letterSpacing: 1 },
+  proBadgeText: { fontFamily: "OutfitBlack", fontSize: 10, color: "#060810", letterSpacing: 1 },
   proPerks: { gap: 9 },
   proPerkRow: { flexDirection: "row", alignItems: "center", gap: 9 },
-  proPerkText: { fontSize: 13, color: Colors.light.muted, fontWeight: "500", flex: 1 },
+  proPerkText: { fontFamily: "OutfitSemiBold", fontSize: 13, color: Colors.light.muted, flex: 1 },
   proUpgradeBtn: { backgroundColor: "#FFD700", borderRadius: 14, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: "#FFD700", shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  proUpgradeBtnText: { fontSize: 15, fontWeight: "900", color: "#060810", letterSpacing: 0.3 },
+  proUpgradeBtnText: { fontFamily: "OutfitBlack", fontSize: 15, color: "#060810", letterSpacing: 0.3 },
 
   proActiveCard: { backgroundColor: "#FFD70008", borderRadius: 18, paddingVertical: 14, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderColor: "#FFD70030" },
-  proActiveTitle: { fontSize: 14, fontWeight: "800", color: Colors.light.text },
-  proActiveSub: { fontSize: 12, color: Colors.light.muted, marginTop: 1, fontWeight: "500" },
+  proActiveTitle: { fontFamily: "OutfitExtraBold", fontSize: 14, color: Colors.light.text },
+  proActiveSub: { fontFamily: "OutfitSemiBold", fontSize: 12, color: Colors.light.muted, marginTop: 1 },
   proBadgeGold: { backgroundColor: "#FFD700", borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4 },
-  proBadgeGoldText: { fontSize: 10, fontWeight: "900", color: "#060810", letterSpacing: 1 },
+  proBadgeGoldText: { fontFamily: "OutfitBlack", fontSize: 10, color: "#060810", letterSpacing: 1 },
 });
