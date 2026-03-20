@@ -52,7 +52,8 @@ import { ANALYTICS_EVENTS } from "@/utils/event-types";
 import { OnboardingScreens } from "@/components/OnboardingScreens";
 import { NodePanel } from "@/components/NodePanel";
 import { PrestigeModal } from "@/components/PrestigeModal";
-import { PanZoomCanvas } from "@/components/PanZoomCanvas";
+import { trpc } from "@/lib/trpc";
+import { PanZoomCanvas, PanZoomCanvasRef } from "../../components/PanZoomCanvas";
 
 type IconComp = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 type TreePoint = { x: number; y: number };
@@ -85,7 +86,6 @@ const ORIGIN_SIZE = 128;
 const NODE_SIZE = 94;
 const GLOW_SIZE = 170;
 const HEADER_HEIGHT = 232;
-const TAB_BAR_OFFSET = 108;
 const MAP_BOTTOM_PADDING = 228;
 const LINE_GLOW_WIDTH = 10;
 const LINE_CORE_WIDTH = 4.5;
@@ -116,7 +116,14 @@ function ProgressRing({ completed, total }: { completed: number; total: number }
     <View style={ringStyles.wrap}>
       <BlurView tint="dark" intensity={70} style={ringStyles.blur}>
         <Svg width={78} height={78}>
-          <SvgCircle cx={39} cy={39} r={radius} stroke="rgba(255,255,255,0.08)" strokeWidth={5} fill="none" />
+          <SvgCircle
+            cx={39}
+            cy={39}
+            r={radius}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth={5}
+            fill="none"
+          />
           <SvgCircle
             cx={39}
             cy={39}
@@ -131,7 +138,9 @@ function ProgressRing({ completed, total }: { completed: number; total: number }
         </Svg>
         <View style={ringStyles.inner}>
           <Text style={ringStyles.pct}>{Math.round(pct * 100)}%</Text>
-          <Text style={ringStyles.count}>{completed}/{total}</Text>
+          <Text style={ringStyles.count}>
+            {completed}/{total}
+          </Text>
         </View>
       </BlurView>
     </View>
@@ -141,9 +150,27 @@ function ProgressRing({ completed, total }: { completed: number; total: number }
 function GlowLayers({ color, complete }: { color: string; complete: boolean }) {
   return (
     <>
-      <View pointerEvents="none" style={[styles.glowOuter, { backgroundColor: alpha(color, complete ? "15" : "0D") }]} />
-      <View pointerEvents="none" style={[styles.glowMid, { backgroundColor: alpha(color, complete ? "1B" : "10") }]} />
-      <View pointerEvents="none" style={[styles.glowInner, { borderColor: alpha(color, complete ? "3A" : "26") }]} />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.glowOuter,
+          { backgroundColor: alpha(color, complete ? "15" : "0D") },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.glowMid,
+          { backgroundColor: alpha(color, complete ? "1B" : "10") },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.glowInner,
+          { borderColor: alpha(color, complete ? "3A" : "26") },
+        ]}
+      />
     </>
   );
 }
@@ -199,8 +226,23 @@ function NodeBubble({
         ]}
       >
         {unlocked ? <GlowLayers color={color} complete={complete} /> : null}
-        {focused ? <View pointerEvents="none" style={[styles.focusHalo, { borderColor: alpha(color, "68"), backgroundColor: alpha(color, "12") }]} /> : null}
-        <Animated.View style={{ transform: [{ scale: focused ? Animated.multiply(scale, 1.04) : scale }] }}>
+        {focused ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.focusHalo,
+              {
+                borderColor: alpha(color, "68"),
+                backgroundColor: alpha(color, "12"),
+              },
+            ]}
+          />
+        ) : null}
+        <Animated.View
+          style={{
+            transform: [{ scale: focused ? Animated.multiply(scale, 1.04) : scale }],
+          }}
+        >
           <Pressable
             testID={`node-${node.id}`}
             onPress={onPress}
@@ -212,23 +254,57 @@ function NodeBubble({
                 width: NODE_SIZE,
                 height: NODE_SIZE,
                 borderRadius: NODE_SIZE / 2,
-                borderColor: unlocked ? alpha(color, complete ? "E8" : "78") : "rgba(255,255,255,0.08)",
-                backgroundColor: unlocked ? alpha(color, complete ? "18" : "10") : "rgba(8,11,19,0.88)",
+                borderColor: unlocked
+                  ? alpha(color, complete ? "E8" : "78")
+                  : "rgba(255,255,255,0.08)",
+                backgroundColor: unlocked
+                  ? alpha(color, complete ? "18" : "10")
+                  : "rgba(8,11,19,0.88)",
                 opacity: unlocked ? 1 : 0.58,
               },
             ]}
           >
-            <View style={[styles.nodeAndroidShadowOne, { backgroundColor: alpha(color, unlocked ? "10" : "06") }]} />
-            <View style={[styles.nodeAndroidShadowTwo, { backgroundColor: alpha(color, unlocked ? "16" : "08") }]} />
-            <View style={[styles.nodeInnerRing, { borderColor: unlocked ? alpha(color, complete ? "5A" : "2A") : "rgba(255,255,255,0.06)" }]} />
+            <View
+              style={[
+                styles.nodeAndroidShadowOne,
+                { backgroundColor: alpha(color, unlocked ? "10" : "06") },
+              ]}
+            />
+            <View
+              style={[
+                styles.nodeAndroidShadowTwo,
+                { backgroundColor: alpha(color, unlocked ? "16" : "08") },
+              ]}
+            />
+            <View
+              style={[
+                styles.nodeInnerRing,
+                {
+                  borderColor: unlocked
+                    ? alpha(color, complete ? "5A" : "2A")
+                    : "rgba(255,255,255,0.06)",
+                },
+              ]}
+            />
             {unlocked && Icon ? (
-              <Icon size={30} color={complete ? color : alpha(color, "EA")} strokeWidth={2.2} />
+              <Icon
+                size={30}
+                color={complete ? color : alpha(color, "EA")}
+                strokeWidth={2.2}
+              />
             ) : (
               <Lock size={18} color="#4D5678" strokeWidth={2.1} />
             )}
-            {hasProgress ? <View style={[styles.progressDot, { backgroundColor: color }]} /> : null}
+            {hasProgress ? (
+              <View style={[styles.progressDot, { backgroundColor: color }]} />
+            ) : null}
             {complete ? (
-              <View style={[styles.completeBadge, { backgroundColor: color, borderColor: "#08101A" }]}>
+              <View
+                style={[
+                  styles.completeBadge,
+                  { backgroundColor: color, borderColor: "#08101A" },
+                ]}
+              >
                 <Text style={styles.completeBadgeCheck}>✓</Text>
               </View>
             ) : null}
@@ -247,17 +323,36 @@ function NodeBubble({
           },
         ]}
       >
-        <View style={[styles.labelConnector, { backgroundColor: unlocked ? alpha(color, "55") : "rgba(255,255,255,0.12)" }]} />
+        <View
+          style={[
+            styles.labelConnector,
+            {
+              backgroundColor: unlocked
+                ? alpha(color, "55")
+                : "rgba(255,255,255,0.12)",
+            },
+          ]}
+        />
         <View
           style={[
             styles.nodeLabelPill,
             {
-              backgroundColor: unlocked ? alpha(color, "16") : "rgba(255,255,255,0.05)",
-              borderColor: unlocked ? alpha(color, "28") : "rgba(255,255,255,0.08)",
+              backgroundColor: unlocked
+                ? alpha(color, "16")
+                : "rgba(255,255,255,0.05)",
+              borderColor: unlocked
+                ? alpha(color, "28")
+                : "rgba(255,255,255,0.08)",
             },
           ]}
         >
-          <Text style={[styles.nodeLabel, { color: unlocked ? Colors.light.text : "#7480A1" }]} numberOfLines={2}>
+          <Text
+            style={[
+              styles.nodeLabel,
+              { color: unlocked ? Colors.light.text : "#7480A1" },
+            ]}
+            numberOfLines={2}
+          >
             {node.title}
           </Text>
         </View>
@@ -282,6 +377,12 @@ export default function TreeScreen() {
   const [generatingChallenges, setGeneratingChallenges] = useState<boolean>(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<SkillNodeItem | null>(null);
+  const [canvasReady, setCanvasReady] = useState<boolean>(false);
+
+  const hasCentered = useRef(false);
+  const canvasRef = useRef<PanZoomCanvasRef>(null);
+
+  const generateTreeMutation = trpc.ai.generateTree.useMutation();
 
   useEffect(() => {
     analytics.track(ANALYTICS_EVENTS.ONBOARDING_STARTED);
@@ -301,7 +402,11 @@ export default function TreeScreen() {
     (amount: number) => {
       setXpGained(amount);
       xpFlashAnim.setValue(1);
-      Animated.timing(xpFlashAnim, { toValue: 0, duration: 1800, useNativeDriver: true }).start();
+      Animated.timing(xpFlashAnim, {
+        toValue: 0,
+        duration: 1800,
+        useNativeDriver: true,
+      }).start();
     },
     [xpFlashAnim]
   );
@@ -312,44 +417,91 @@ export default function TreeScreen() {
       setGenerateError(null);
       console.log("[onboard] Building challenge tree from default challenges");
       try {
-        await new Promise<void>((resolve) => setTimeout(resolve, 1400));
+        const generatedNodes = await generateTreeMutation.mutateAsync({
+          mind: answers.mind,
+          body: answers.body,
+          craft: answers.craft,
+        });
+
         const allGenerated: Record<string, Challenge[]> = {};
         SKILL_NODES.forEach((node) => {
-          allGenerated[node.id] = node.defaultChallenges;
+          if (generatedNodes && generatedNodes[node.id]) {
+            allGenerated[node.id] = generatedNodes[node.id];
+          } else {
+            allGenerated[node.id] = node.defaultChallenges;
+          }
         });
+        console.log(
+          "[onboard] Built challenges for",
+          Object.keys(allGenerated).length,
+          "nodes"
+        );
         completeOnboarding(answers, allGenerated);
       } catch (error) {
-        setGenerateError("Failed to generate. Tap retry.");
+        console.error("[onboard] Generation failed:", error);
+        setGenerateError("Failed to connect to AI. Tap retry.");
       } finally {
         setGeneratingChallenges(false);
       }
     },
-    [completeOnboarding]
+    [completeOnboarding, generateTreeMutation]
   );
 
   const currentLevel = getUserLevel(state.xp);
   const xpCurrent = getXpForCurrentLevel(currentLevel);
   const xpNext = getXpForNextLevel(currentLevel);
-  const xpProgress = xpNext > xpCurrent ? (state.xp - xpCurrent) / (xpNext - xpCurrent) : 1;
+  const xpProgress =
+    xpNext > xpCurrent ? (state.xp - xpCurrent) / (xpNext - xpCurrent) : 1;
   const currentPrestigeRank = getPrestigeRank(state.prestigeCount);
   const maxTreeLevel = TREE_LEVELS[TREE_LEVELS.length - 1]?.number ?? 1;
+
   const canvasWidth = Math.max(width * 3.4, 1680);
   const originY = TREE_TOP_PADDING + maxTreeLevel * LEVEL_SPACING;
   const canvasHeight = originY + ORIGIN_BOTTOM_PADDING;
-  const originPoint = useMemo<TreePoint>(() => ({ x: canvasWidth * 0.5, y: originY }), [canvasWidth, originY]);
+  const originPoint = useMemo<TreePoint>(
+    () => ({ x: canvasWidth * 0.5, y: originY }),
+    [canvasWidth, originY]
+  );
+
+  const centerOrigin = useCallback(
+    (animated: boolean = true) => {
+      setFocusedNodeId("origin");
+      canvasRef.current?.centerOn(
+        originPoint.x,
+        originPoint.y,
+        width,
+        height,
+        animated
+      );
+    },
+    [originPoint, width, height]
+  );
+
+  useEffect(() => {
+    if (!hasCentered.current && state.onboardingComplete) {
+      setTimeout(() => {
+        centerOrigin(false);
+        hasCentered.current = true;
+        setCanvasReady(true);
+      }, 100);
+    }
+  }, [centerOrigin, state.onboardingComplete]);
 
   const nodePositions = useMemo<Record<string, TreePoint>>(() => {
     return SKILL_NODES.reduce<Record<string, TreePoint>>((accumulator, node) => {
       const bounds = DOMAIN_BOUNDS[node.domainId];
       const clampedXFrac = clamp(node.xFrac, bounds[0], bounds[1]);
       const siblings = SKILL_NODES.filter(
-        (candidate) => candidate.domainId === node.domainId && candidate.levelNumber === node.levelNumber
+        (candidate) =>
+          candidate.domainId === node.domainId &&
+          candidate.levelNumber === node.levelNumber
       ).sort((left, right) => left.xFrac - right.xFrac);
       const siblingIndex = Math.max(
         siblings.findIndex((candidate) => candidate.id === node.id),
         0
       );
-      const siblingSpread = siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
+      const siblingSpread =
+        siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
       const levelWave = (node.levelNumber % 2 === 0 ? 1 : -1) * 14;
       const yOffset = siblingSpread * 124 + levelWave;
       accumulator[node.id] = {
@@ -371,14 +523,38 @@ export default function TreeScreen() {
     const topAnimation = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(orbTopScaleAnim, { toValue: 1.15, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbTopDriftXAnim, { toValue: -18, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbTopDriftYAnim, { toValue: 14, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopScaleAnim, {
+            toValue: 1.15,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbTopDriftXAnim, {
+            toValue: -18,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbTopDriftYAnim, {
+            toValue: 14,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
         ]),
         Animated.parallel([
-          Animated.timing(orbTopScaleAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbTopDriftXAnim, { toValue: 8, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbTopDriftYAnim, { toValue: -10, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbTopScaleAnim, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbTopDriftXAnim, {
+            toValue: 8,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbTopDriftYAnim, {
+            toValue: -10,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
         ]),
       ])
     );
@@ -386,14 +562,38 @@ export default function TreeScreen() {
     const bottomAnimation = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(orbBottomScaleAnim, { toValue: 1.15, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbBottomDriftXAnim, { toValue: 16, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbBottomDriftYAnim, { toValue: -16, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomScaleAnim, {
+            toValue: 1.15,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbBottomDriftXAnim, {
+            toValue: 16,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbBottomDriftYAnim, {
+            toValue: -16,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
         ]),
         Animated.parallel([
-          Animated.timing(orbBottomScaleAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbBottomDriftXAnim, { toValue: -12, duration: 4000, useNativeDriver: true }),
-          Animated.timing(orbBottomDriftYAnim, { toValue: 10, duration: 4000, useNativeDriver: true }),
+          Animated.timing(orbBottomScaleAnim, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbBottomDriftXAnim, {
+            toValue: -12,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbBottomDriftYAnim, {
+            toValue: 10,
+            duration: 4000,
+            useNativeDriver: true,
+          }),
         ]),
       ])
     );
@@ -405,7 +605,14 @@ export default function TreeScreen() {
       topAnimation.stop();
       bottomAnimation.stop();
     };
-  }, [orbBottomDriftXAnim, orbBottomDriftYAnim, orbBottomScaleAnim, orbTopDriftXAnim, orbTopDriftYAnim, orbTopScaleAnim]);
+  }, [
+    orbBottomDriftXAnim,
+    orbBottomDriftYAnim,
+    orbBottomScaleAnim,
+    orbTopDriftXAnim,
+    orbTopDriftYAnim,
+    orbTopScaleAnim,
+  ]);
 
   const backgroundOrbTopStyle = useMemo(
     () => ({
@@ -436,9 +643,12 @@ export default function TreeScreen() {
           <View style={styles.authScroll}>
             <View style={styles.authHero}>
               <Text style={styles.brand}>SkillTree</Text>
-              <Text style={styles.authTitle}>Become who{"\n"}you&apos;re meant to be.</Text>
+              <Text style={styles.authTitle}>
+                Become who{"\n"}you&apos;re meant to be.
+              </Text>
               <Text style={styles.authSub}>
-                A gamified skill tree that adapts to your goals and tracks your growth.
+                A gamified skill tree that adapts to your goals and tracks your
+                growth.
               </Text>
             </View>
             <BlurView tint="dark" intensity={75} style={styles.authCard}>
@@ -453,7 +663,10 @@ export default function TreeScreen() {
                 testID="auth-name"
               />
               <TouchableOpacity
-                style={[styles.primaryBtn, !nameInput.trim() && styles.primaryBtnDisabled]}
+                style={[
+                  styles.primaryBtn,
+                  !nameInput.trim() && styles.primaryBtnDisabled,
+                ]}
                 onPress={() => signIn(nameInput.trim() || "Adventurer")}
                 disabled={!nameInput.trim()}
                 testID="auth-continue"
@@ -481,8 +694,14 @@ export default function TreeScreen() {
   return (
     <View style={styles.shell}>
       <SafeAreaView style={styles.safeArea}>
-        <Animated.View style={[styles.backgroundOrbTop, backgroundOrbTopStyle]} pointerEvents="none" />
-        <Animated.View style={[styles.backgroundOrbBottom, backgroundOrbBottomStyle]} pointerEvents="none" />
+        <Animated.View
+          style={[styles.backgroundOrbTop, backgroundOrbTopStyle]}
+          pointerEvents="none"
+        />
+        <Animated.View
+          style={[styles.backgroundOrbBottom, backgroundOrbBottomStyle]}
+          pointerEvents="none"
+        />
 
         <View style={styles.headerWrap} pointerEvents="box-none">
           <BlurView tint="dark" intensity={80} style={styles.headerBlur}>
@@ -490,7 +709,9 @@ export default function TreeScreen() {
               <View style={styles.headerLeft}>
                 <Text style={styles.brand}>SkillTree</Text>
                 <View style={styles.greetingRow}>
-                  <Text style={styles.greeting}>Hey {state.displayName || "Adventurer"}</Text>
+                  <Text style={styles.greeting}>
+                    Hey {state.displayName || "Adventurer"}
+                  </Text>
                   {state.isPro ? (
                     <View style={styles.proBadge}>
                       <Text style={styles.proBadgeText}>PRO</Text>
@@ -504,16 +725,38 @@ export default function TreeScreen() {
             <View style={styles.headerStatsRow}>
               <View style={styles.headerPrimaryStat}>
                 <Text style={styles.headerStatEyebrow}>Completed</Text>
-                <Text style={styles.headerStatValue}>{completedChallenges}<Text style={styles.headerStatMuted}>/{totalChallenges}</Text></Text>
+                <Text style={styles.headerStatValue}>
+                  {completedChallenges}
+                  <Text style={styles.headerStatMuted}>/{totalChallenges}</Text>
+                </Text>
               </View>
               <View style={styles.headerStatDivider} />
               <View style={styles.headerPrimaryStat}>
                 <Text style={styles.headerStatEyebrow}>Level</Text>
                 <Text style={styles.headerStatValue}>LV{currentLevel}</Text>
               </View>
-              <View style={[styles.rankPill, { borderColor: alpha(currentPrestigeRank.color, "38"), backgroundColor: alpha(currentPrestigeRank.color, "14") }]}>
-                <Trophy size={12} color={currentPrestigeRank.color} strokeWidth={2.2} />
-                <Text style={[styles.rankPillText, { color: currentPrestigeRank.color }]}>{currentPrestigeRank.name}</Text>
+              <View
+                style={[
+                  styles.rankPill,
+                  {
+                    borderColor: alpha(currentPrestigeRank.color, "38"),
+                    backgroundColor: alpha(currentPrestigeRank.color, "14"),
+                  },
+                ]}
+              >
+                <Trophy
+                  size={12}
+                  color={currentPrestigeRank.color}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[
+                    styles.rankPillText,
+                    { color: currentPrestigeRank.color },
+                  ]}
+                >
+                  {currentPrestigeRank.name}
+                </Text>
               </View>
             </View>
 
@@ -529,7 +772,12 @@ export default function TreeScreen() {
                     },
                   ]}
                 >
-                  <View style={[styles.legendDot, { backgroundColor: DOMAIN_COLOR[domain] }]} />
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: DOMAIN_COLOR[domain] },
+                    ]}
+                  />
                   <Text style={styles.legendLabel}>{DOMAIN_LABEL[domain]}</Text>
                 </View>
               ))}
@@ -537,25 +785,37 @@ export default function TreeScreen() {
 
             <View style={styles.xpBarWrap}>
               <Text style={styles.xpBarLabel}>
-                LV{currentLevel} · {Math.max(0, state.xp - xpCurrent)} / {Math.max(0, xpNext - xpCurrent)} XP to next level
+                LV{currentLevel} · {Math.max(0, state.xp - xpCurrent)} /{" "}
+                {Math.max(0, xpNext - xpCurrent)} XP to next level
               </Text>
               <View style={styles.xpBarTrack}>
-                <View style={[styles.xpBarFill, { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` }]} />
+                <View
+                  style={[
+                    styles.xpBarFill,
+                    { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` },
+                  ]}
+                />
               </View>
             </View>
           </BlurView>
         </View>
 
-        <Animated.View style={[styles.xpFlash, { opacity: xpFlashAnim }]} pointerEvents="none">
+        <Animated.View
+          style={[styles.xpFlash, { opacity: xpFlashAnim }]}
+          pointerEvents="none"
+        >
           <BlurView tint="dark" intensity={70} style={styles.xpFlashBubble}>
             <Zap size={14} color={Colors.light.tint} strokeWidth={2.5} />
             <Text style={styles.xpFlashText}>+{xpGained} XP</Text>
           </BlurView>
         </Animated.View>
 
-        {/* CAMERA ENGINE */}
-        <View style={{ flex: 1, overflow: 'hidden' }}>
-          <PanZoomCanvas canvasWidth={canvasWidth} canvasHeight={canvasHeight}>
+        <View style={{ flex: 1, overflow: "hidden" }}>
+          <PanZoomCanvas
+            ref={canvasRef}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+          >
             <View
               pointerEvents="none"
               style={[
@@ -567,7 +827,12 @@ export default function TreeScreen() {
               ]}
             />
 
-            <Svg width={canvasWidth} height={canvasHeight} style={StyleSheet.absoluteFillObject} pointerEvents="none">
+            <Svg
+              width={canvasWidth}
+              height={canvasHeight}
+              style={StyleSheet.absoluteFillObject}
+              pointerEvents="none"
+            >
               {connections.map(({ parentId, nodeId }) => {
                 const parentPoint = parentId === "origin" ? originPoint : nodePositions[parentId];
                 const childPoint = nodePositions[nodeId];
@@ -598,7 +863,11 @@ export default function TreeScreen() {
                     ) : null}
                     <Path
                       d={path}
-                      stroke={connectorActive ? alpha(color, "75") : "rgba(255,255,255,0.11)"}
+                      stroke={
+                        connectorActive
+                          ? alpha(color, "75")
+                          : "rgba(255,255,255,0.11)"
+                      }
                       strokeWidth={connectorActive ? LINE_CORE_WIDTH : 3}
                       strokeLinecap="round"
                       fill="none"
@@ -619,7 +888,9 @@ export default function TreeScreen() {
               pointerEvents="none"
             >
               <GlowLayers color={Colors.light.tint} complete />
-              {focusedNodeId === "origin" ? <View style={styles.originFocusHalo} /> : null}
+              {focusedNodeId === "origin" ? (
+                <View style={styles.originFocusHalo} />
+              ) : null}
               <View style={styles.originNode}>
                 <View style={styles.originNodeInner}>
                   <Zap size={38} color={Colors.light.tint} strokeWidth={2.2} />
@@ -637,7 +908,12 @@ export default function TreeScreen() {
                 },
               ]}
             >
-              <View style={[styles.labelConnector, { backgroundColor: alpha(Colors.light.tint, "65") }]} />
+              <View
+                style={[
+                  styles.labelConnector,
+                  { backgroundColor: alpha(Colors.light.tint, "65") },
+                ]}
+              />
               <View style={[styles.nodeLabelPill, styles.originLabelPill]}>
                 <Text style={[styles.nodeLabel, styles.originLabel]}>Origin</Text>
               </View>
@@ -647,8 +923,13 @@ export default function TreeScreen() {
               const point = nodePositions[node.id];
               const unlocked = isNodeUnlocked(node.id);
               const complete = isNodeComplete(node.id);
-              const challenges = (state.aiChallenges[node.id] ?? []).length > 0 ? state.aiChallenges[node.id] : node.defaultChallenges;
-              const completedCount = challenges.filter((challenge) => state.challengeProgress[challenge.id]).length;
+              const challenges =
+                (state.aiChallenges[node.id] ?? []).length > 0
+                  ? state.aiChallenges[node.id]
+                  : node.defaultChallenges;
+              const completedCount = challenges.filter(
+                (challenge) => state.challengeProgress[challenge.id]
+              ).length;
               const hasProgress = completedCount > 0 && !complete;
 
               if (!point) {
@@ -670,12 +951,33 @@ export default function TreeScreen() {
                     }
                     await Haptics.selectionAsync();
                     setSelectedNode(node);
+                    setFocusedNodeId(node.id);
+                    canvasRef.current?.centerOn(
+                      point.x,
+                      point.y,
+                      width,
+                      height,
+                      true
+                    );
                   }}
                 />
               );
             })}
           </PanZoomCanvas>
         </View>
+
+        {canvasReady ? (
+          <Pressable
+            style={styles.centerButtonWrap}
+            onPress={() => centerOrigin(true)}
+            testID="center-origin-button"
+          >
+            <BlurView tint="dark" intensity={82} style={styles.centerButton}>
+              <Zap size={16} color={Colors.light.tint} strokeWidth={2.4} />
+              <Text style={styles.centerButtonText}>Center Origin</Text>
+            </BlurView>
+          </Pressable>
+        ) : null}
 
         {selectedNode ? (
           <NodePanel
@@ -692,7 +994,12 @@ export default function TreeScreen() {
 }
 
 const ringStyles = StyleSheet.create({
-  wrap: { width: 82, height: 82, alignItems: "center", justifyContent: "center" },
+  wrap: {
+    width: 82,
+    height: 82,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   blur: {
     width: 82,
     height: 82,
@@ -704,14 +1011,30 @@ const ringStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  inner: { position: "absolute", alignItems: "center" },
-  pct: { fontFamily: "OutfitExtraBold", fontSize: 15, color: Colors.light.text },
-  count: { fontFamily: "OutfitSemiBold", fontSize: 10, color: Colors.light.muted },
+  inner: {
+    position: "absolute",
+    alignItems: "center",
+  },
+  pct: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 15,
+    color: Colors.light.text,
+  },
+  count: {
+    fontFamily: "OutfitSemiBold",
+    fontSize: 10,
+    color: Colors.light.muted,
+  },
 });
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: APP_BACKGROUND },
-  safeArea: { flex: 1 },
+  shell: {
+    flex: 1,
+    backgroundColor: APP_BACKGROUND,
+  },
+  safeArea: {
+    flex: 1,
+  },
   backgroundOrbTop: {
     position: "absolute",
     width: 360,
@@ -730,8 +1053,15 @@ const styles = StyleSheet.create({
     bottom: -80,
     left: -90,
   },
-  authScroll: { padding: 24, paddingTop: 52, gap: 28, flexGrow: 1 },
-  authHero: { gap: 12 },
+  authScroll: {
+    padding: 24,
+    paddingTop: 52,
+    gap: 28,
+    flexGrow: 1,
+  },
+  authHero: {
+    gap: 12,
+  },
   brand: {
     fontFamily: "OutfitBlack",
     fontSize: 11,
@@ -739,8 +1069,18 @@ const styles = StyleSheet.create({
     color: Colors.light.tint,
     textTransform: "uppercase",
   },
-  authTitle: { fontFamily: "OutfitExtraBold", fontSize: 40, color: Colors.light.text, lineHeight: 46 },
-  authSub: { fontFamily: "Outfit", fontSize: 15, color: Colors.light.muted, lineHeight: 24 },
+  authTitle: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 40,
+    color: Colors.light.text,
+    lineHeight: 46,
+  },
+  authSub: {
+    fontFamily: "Outfit",
+    fontSize: 15,
+    color: Colors.light.muted,
+    lineHeight: 24,
+  },
   authCard: {
     borderRadius: 28,
     padding: 22,
@@ -777,8 +1117,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  primaryBtnDisabled: { opacity: 0.35 },
-  primaryBtnText: { fontFamily: "OutfitExtraBold", fontSize: 16, color: "#060810", letterSpacing: 0.3 },
+  primaryBtnDisabled: {
+    opacity: 0.35,
+  },
+  primaryBtnText: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 16,
+    color: "#060810",
+    letterSpacing: 0.3,
+  },
   headerWrap: {
     position: "absolute",
     top: 0,
@@ -804,9 +1151,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  headerLeft: { flex: 1 },
-  greetingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  greeting: { fontFamily: "OutfitExtraBold", fontSize: 28, color: "#F8FAFF", letterSpacing: -0.8 },
+  headerLeft: {
+    flex: 1,
+  },
+  greetingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  greeting: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 28,
+    color: "#F8FAFF",
+    letterSpacing: -0.8,
+  },
   proBadge: {
     backgroundColor: Colors.light.tint,
     borderRadius: 999,
@@ -814,13 +1173,44 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     alignSelf: "center",
   },
-  proBadgeText: { fontFamily: "OutfitBlack", fontSize: 10, color: "#060810", letterSpacing: 1 },
-  headerStatsRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 16 },
-  headerPrimaryStat: { flex: 1, gap: 4 },
-  headerStatEyebrow: { fontFamily: "OutfitBold", fontSize: 11, color: "#97A3C8", textTransform: "uppercase", letterSpacing: 1.3 },
-  headerStatValue: { fontFamily: "OutfitBlack", fontSize: 24, color: "#F8FAFF", letterSpacing: -0.6 },
-  headerStatMuted: { fontFamily: "OutfitBold", color: "#9AA4C8" },
-  headerStatDivider: { width: 1, alignSelf: "stretch", backgroundColor: "rgba(255,255,255,0.12)" },
+  proBadgeText: {
+    fontFamily: "OutfitBlack",
+    fontSize: 10,
+    color: "#060810",
+    letterSpacing: 1,
+  },
+  headerStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+  },
+  headerPrimaryStat: {
+    flex: 1,
+    gap: 4,
+  },
+  headerStatEyebrow: {
+    fontFamily: "OutfitBold",
+    fontSize: 11,
+    color: "#97A3C8",
+    textTransform: "uppercase",
+    letterSpacing: 1.3,
+  },
+  headerStatValue: {
+    fontFamily: "OutfitBlack",
+    fontSize: 24,
+    color: "#F8FAFF",
+    letterSpacing: -0.6,
+  },
+  headerStatMuted: {
+    fontFamily: "OutfitBold",
+    color: "#9AA4C8",
+  },
+  headerStatDivider: {
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
   rankPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -830,8 +1220,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  rankPillText: { fontFamily: "OutfitExtraBold", fontSize: 11 },
-  legendWrap: { flexDirection: "row", gap: 10, marginTop: 16 },
+  rankPillText: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 11,
+  },
+  legendWrap: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -841,12 +1238,36 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  legendDot: { width: 12, height: 12, borderRadius: 6 },
-  legendLabel: { fontFamily: "OutfitExtraBold", fontSize: 12, color: "#E6ECFF" },
-  xpBarWrap: { marginTop: 16, gap: 8 },
-  xpBarTrack: { height: 11, backgroundColor: "rgba(255,255,255,0.11)", borderRadius: 999, overflow: "hidden" },
-  xpBarFill: { height: "100%", backgroundColor: Colors.light.tint, borderRadius: 999 },
-  xpBarLabel: { fontFamily: "OutfitExtraBold", fontSize: 14, color: "#E8F5FF" },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendLabel: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 12,
+    color: "#E6ECFF",
+  },
+  xpBarWrap: {
+    marginTop: 16,
+    gap: 8,
+  },
+  xpBarTrack: {
+    height: 11,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  xpBarFill: {
+    height: "100%",
+    backgroundColor: Colors.light.tint,
+    borderRadius: 999,
+  },
+  xpBarLabel: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 14,
+    color: "#E8F5FF",
+  },
   xpFlash: {
     position: "absolute",
     top: HEADER_HEIGHT - 18,
@@ -867,7 +1288,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  xpFlashText: { fontFamily: "OutfitExtraBold", fontSize: 14, color: Colors.light.tint },
+  xpFlashText: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 14,
+    color: Colors.light.tint,
+  },
   originAura: {
     position: "absolute",
     width: 340,
@@ -1000,9 +1425,22 @@ const styles = StyleSheet.create({
     top: -6,
     right: -4,
   },
-  completeBadgeCheck: { fontFamily: "OutfitBlack", fontSize: 10, color: "#000" },
-  labelWrap: { position: "absolute", alignItems: "center", zIndex: 4 },
-  labelConnector: { width: 3, height: LABEL_CONNECTOR_HEIGHT, borderRadius: 999, marginBottom: 8 },
+  completeBadgeCheck: {
+    fontFamily: "OutfitBlack",
+    fontSize: 10,
+    color: "#000",
+  },
+  labelWrap: {
+    position: "absolute",
+    alignItems: "center",
+    zIndex: 4,
+  },
+  labelConnector: {
+    width: 3,
+    height: LABEL_CONNECTOR_HEIGHT,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
   nodeLabelPill: {
     minHeight: 38,
     paddingHorizontal: 12,
@@ -1011,7 +1449,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: "center",
   },
-  nodeLabel: { fontFamily: "OutfitExtraBold", fontSize: 13, textAlign: "center", lineHeight: 17 },
-  originLabelPill: { backgroundColor: alpha(Colors.light.tint, "16"), borderColor: alpha(Colors.light.tint, "2A") },
-  originLabel: { color: Colors.light.text, fontSize: 16 },
+  nodeLabel: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 17,
+  },
+  originLabelPill: {
+    backgroundColor: alpha(Colors.light.tint, "16"),
+    borderColor: alpha(Colors.light.tint, "2A"),
+  },
+  originLabel: {
+    color: Colors.light.text,
+    fontSize: 16,
+  },
+  centerButtonWrap: {
+    position: "absolute",
+    right: 18,
+    bottom: 104,
+    zIndex: 25,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  centerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#000",
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  centerButtonText: {
+    fontFamily: "OutfitExtraBold",
+    fontSize: 13,
+    color: Colors.light.text,
+  },
 });
