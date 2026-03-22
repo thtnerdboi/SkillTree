@@ -91,8 +91,8 @@ const NODE_SIZE = 94;
 const GLOW_SIZE = 170;
 const HEADER_EXPANDED_HEIGHT = 232;
 const HEADER_COLLAPSED_HEIGHT = 86;
-const MIN_MAP_SCALE = 0.88;
-const MAX_MAP_SCALE = 1.24;
+const MIN_MAP_SCALE = 0.5;
+const MAX_MAP_SCALE = 2.0;
 const LINE_GLOW_WIDTH = 10;
 const LINE_CORE_WIDTH = 4.5;
 const LABEL_PILL_WIDTH = 132;
@@ -368,7 +368,7 @@ function NodeBubble({
 }
 
 export default function TreeScreen() {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const {
     state,
     signIn,
@@ -384,10 +384,13 @@ export default function TreeScreen() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<SkillNodeItem | null>(null);
   const [canvasReady, setCanvasReady] = useState<boolean>(false);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
 
   // Layout State
   const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
-  const [mapScale, setMapScale] = useState<number>(1);
   const headerExpandAnim = useRef(new Animated.Value(1)).current;
 
   const hasCentered = useRef(false);
@@ -410,9 +413,7 @@ export default function TreeScreen() {
   const [focusedNodeId, setFocusedNodeId] = useState<string>("calm");
 
   const handleZoom = useCallback((direction: 1 | -1) => {
-    setMapScale((current) => {
-      return clamp(Number((current + direction * 0.12).toFixed(2)), MIN_MAP_SCALE, MAX_MAP_SCALE);
-    });
+    canvasRef.current?.zoomBy(direction * 0.2, true);
   }, []);
 
   const flashXP = useCallback(
@@ -448,7 +449,7 @@ export default function TreeScreen() {
           }
         });
         completeOnboarding(answers, allGenerated);
-      } catch (error) {
+      } catch {
         setGenerateError("Failed to connect to AI. Tap retry.");
       } finally {
         setGeneratingChallenges(false);
@@ -469,9 +470,9 @@ export default function TreeScreen() {
   const baseCanvasWidth = Math.max(width * 3.4, 1680);
   const baseOriginY = TREE_TOP_PADDING + maxTreeLevel * LEVEL_SPACING;
   const baseCanvasHeight = baseOriginY + ORIGIN_BOTTOM_PADDING;
-  const canvasWidth = baseCanvasWidth * mapScale;
-  const originY = baseOriginY * mapScale;
-  const canvasHeight = baseCanvasHeight * mapScale;
+  const canvasWidth = baseCanvasWidth;
+  const originY = baseOriginY;
+  const canvasHeight = baseCanvasHeight;
   const headerHeight = headerCollapsed ? HEADER_COLLAPSED_HEIGHT : HEADER_EXPANDED_HEIGHT;
 
   const originPoint = useMemo<TreePoint>(
@@ -485,12 +486,10 @@ export default function TreeScreen() {
       canvasRef.current?.centerOn(
         originPoint.x,
         originPoint.y,
-        width,
-        height,
         animated
       );
     },
-    [originPoint, width, height]
+    [originPoint]
   );
 
   useEffect(() => {
@@ -503,14 +502,19 @@ export default function TreeScreen() {
   }, [headerCollapsed, headerExpandAnim]);
 
   useEffect(() => {
-    if (!hasCentered.current && state.onboardingComplete) {
+    if (
+      !hasCentered.current &&
+      state.onboardingComplete &&
+      viewportSize.width > 0 &&
+      viewportSize.height > 0
+    ) {
       setTimeout(() => {
         centerOrigin(false);
         hasCentered.current = true;
         setCanvasReady(true);
       }, 100);
     }
-  }, [centerOrigin, state.onboardingComplete]);
+  }, [centerOrigin, state.onboardingComplete, viewportSize.height, viewportSize.width]);
 
   const nodePositions = useMemo<Record<string, TreePoint>>(() => {
     return SKILL_NODES.reduce<Record<string, TreePoint>>((accumulator, node) => {
@@ -529,17 +533,13 @@ export default function TreeScreen() {
       const siblingSpread = siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
       const levelWave = (node.levelNumber % 2 === 0 ? 1 : -1) * 14;
       
-      // Scale offsets dynamically based on the Map Scale buttons
-      const scaledLevelSpacing = LEVEL_SPACING * mapScale;
-      const scaledYOffset = (siblingSpread * 124 + levelWave) * mapScale;
-      
       accumulator[node.id] = {
         x: canvasWidth * clampedXFrac,
-        y: originY - node.levelNumber * scaledLevelSpacing + scaledYOffset,
+        y: originY - node.levelNumber * LEVEL_SPACING + siblingSpread * 124 + levelWave,
       };
       return accumulator;
     }, {});
-  }, [canvasWidth, mapScale, originY]);
+  }, [canvasWidth, originY]);
 
   const connections = useMemo(() => {
     return SKILL_NODES.flatMap((node) => {
@@ -886,11 +886,26 @@ export default function TreeScreen() {
           </BlurView>
         </Animated.View>
 
-        <View style={{ flex: 1, overflow: "hidden" }}>
+        <View
+          style={{ flex: 1, overflow: "hidden" }}
+          onLayout={(event) => {
+            const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
+            setViewportSize((prev) => {
+              if (prev.width === nextWidth && prev.height === nextHeight) {
+                return prev;
+              }
+              return { width: nextWidth, height: nextHeight };
+            });
+          }}
+        >
           <PanZoomCanvas
             ref={canvasRef}
             canvasWidth={canvasWidth}
             canvasHeight={canvasHeight}
+            viewportWidth={viewportSize.width}
+            viewportHeight={viewportSize.height}
+            minScale={MIN_MAP_SCALE}
+            maxScale={MAX_MAP_SCALE}
           >
             <View
               pointerEvents="none"
@@ -1033,8 +1048,6 @@ export default function TreeScreen() {
                     canvasRef.current?.centerOn(
                       point.x,
                       point.y,
-                      width,
-                      height,
                       true
                     );
                   }}
