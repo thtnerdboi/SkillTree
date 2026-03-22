@@ -124,6 +124,9 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
 
     const pan = Gesture.Pan()
       .onStart(() => {
+        if (!isViewportReady()) {
+          return;
+        }
         cancelAnimation(translateX);
         cancelAnimation(translateY);
         savedTranslateX.value = translateX.value;

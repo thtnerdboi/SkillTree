@@ -482,6 +482,9 @@ export default function TreeScreen() {
 
   const centerOrigin = useCallback(
     (animated: boolean = true) => {
+      if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+        return;
+      }
       setFocusedNodeId("origin");
       canvasRef.current?.centerOn(
         originPoint.x,
