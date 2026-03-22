@@ -43,53 +43,19 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
     const savedTranslateY = useSharedValue(0);
     const savedScale = useSharedValue(1);
 
-    const getScaleOffset = (nextScale: number) => {
-      'worklet';
-      return {
-        x: (canvasWidth * (1 - nextScale)) / 2,
-        y: (canvasHeight * (1 - nextScale)) / 2,
-      };
-    };
-
-    const isViewportReady = () => {
-      'worklet';
-      return viewportWidth > 0 && viewportHeight > 0;
-    };
-
     const getBounds = (nextScale: number) => {
       'worklet';
-      if (!isViewportReady()) {
-        return { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity };
-      }
-
       const scaledWidth = canvasWidth * nextScale;
       const scaledHeight = canvasHeight * nextScale;
-      const scaleOffset = getScaleOffset(nextScale);
-
-      const minX =
-        scaledWidth <= viewportWidth
-          ? (viewportWidth - scaledWidth) / 2 - scaleOffset.x
-          : viewportWidth - scaledWidth - scaleOffset.x;
-      const maxX =
-        scaledWidth <= viewportWidth
-          ? (viewportWidth - scaledWidth) / 2 - scaleOffset.x
-          : -scaleOffset.x;
-      const minY =
-        scaledHeight <= viewportHeight
-          ? (viewportHeight - scaledHeight) / 2 - scaleOffset.y
-          : viewportHeight - scaledHeight - scaleOffset.y;
-      const maxY =
-        scaledHeight <= viewportHeight
-          ? (viewportHeight - scaledHeight) / 2 - scaleOffset.y
-          : -scaleOffset.y;
+      const minX = Math.min(0, viewportWidth - scaledWidth);
+      const maxX = scaledWidth <= viewportWidth ? (viewportWidth - scaledWidth) / 2 : 0;
+      const minY = Math.min(0, viewportHeight - scaledHeight);
+      const maxY = scaledHeight <= viewportHeight ? (viewportHeight - scaledHeight) / 2 : 0;
       return { minX, maxX, minY, maxY };
     };
 
     const clampTranslate = (x: number, y: number, nextScale: number) => {
       'worklet';
-      if (!isViewportReady()) {
-        return { x, y };
-      }
       const bounds = getBounds(nextScale);
       return {
         x: clamp(x, bounds.minX, bounds.maxX),
@@ -99,13 +65,8 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
 
     const centerOnPoint = (x: number, y: number, animated: boolean) => {
       'worklet';
-      if (!isViewportReady()) {
-        return;
-      }
-
-      const scaleOffset = getScaleOffset(scale.value);
-      const targetX = viewportWidth / 2 - x * scale.value - scaleOffset.x;
-      const targetY = viewportHeight / 2 - y * scale.value - scaleOffset.y;
+      const targetX = viewportWidth / 2 - x * scale.value;
+      const targetY = viewportHeight / 2 - y * scale.value;
       const clamped = clampTranslate(targetX, targetY, scale.value);
 
       if (animated) {
@@ -128,17 +89,11 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
 
     useImperativeHandle(ref, () => ({
       centerOn: (x, y, animated = true) => {
-        if (viewportWidth <= 0 || viewportHeight <= 0) {
-          return;
-        }
         cancelAnimation(translateX);
         cancelAnimation(translateY);
         centerOnPoint(x, y, animated);
       },
       zoomBy: (delta, animated = true) => {
-        if (viewportWidth <= 0 || viewportHeight <= 0) {
-          return;
-        }
         cancelAnimation(scale);
         cancelAnimation(translateX);
         cancelAnimation(translateY);
@@ -146,11 +101,9 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         const nextScale = clamp(scale.value + delta, minScale, maxScale);
         const centerX = viewportWidth / 2;
         const centerY = viewportHeight / 2;
-        const prevOffset = getScaleOffset(scale.value);
-        const nextOffset = getScaleOffset(nextScale);
         const factor = nextScale / scale.value;
-        const targetX = centerX - factor * (centerX - translateX.value - prevOffset.x) - nextOffset.x;
-        const targetY = centerY - factor * (centerY - translateY.value - prevOffset.y) - nextOffset.y;
+        const targetX = centerX - factor * (centerX - translateX.value);
+        const targetY = centerY - factor * (centerY - translateY.value);
         const clamped = clampTranslate(targetX, targetY, nextScale);
 
         if (animated) {
@@ -180,9 +133,6 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
-        if (!isViewportReady()) {
-          return;
-        }
         const nextX = savedTranslateX.value + e.translationX;
         const nextY = savedTranslateY.value + e.translationY;
         const clamped = clampTranslate(nextX, nextY, scale.value);
@@ -190,9 +140,6 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         translateY.value = clamped.y;
       })
       .onEnd((e) => {
-        if (!isViewportReady()) {
-          return;
-        }
         const bounds = getBounds(scale.value);
         translateX.value = withDecay({
           velocity: e.velocityX,
@@ -210,9 +157,6 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
 
     const pinch = Gesture.Pinch()
       .onStart((e) => {
-        if (!isViewportReady()) {
-          return;
-        }
         cancelAnimation(scale);
         cancelAnimation(translateX);
         cancelAnimation(translateY);
@@ -221,15 +165,10 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
-        if (!isViewportReady()) {
-          return;
-        }
         const nextScale = clamp(savedScale.value * e.scale, minScale, maxScale);
         const ratio = nextScale / savedScale.value;
-        const prevOffset = getScaleOffset(savedScale.value);
-        const nextOffset = getScaleOffset(nextScale);
-        const nextX = e.focalX - ratio * (e.focalX - savedTranslateX.value - prevOffset.x) - nextOffset.x;
-        const nextY = e.focalY - ratio * (e.focalY - savedTranslateY.value - prevOffset.y) - nextOffset.y;
+        const nextX = e.focalX - ratio * (e.focalX - savedTranslateX.value);
+        const nextY = e.focalY - ratio * (e.focalY - savedTranslateY.value);
         const clamped = clampTranslate(nextX, nextY, nextScale);
 
         scale.value = nextScale;
@@ -237,9 +176,6 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         translateY.value = clamped.y;
       })
       .onEnd(() => {
-        if (!isViewportReady()) {
-          return;
-        }
         savedScale.value = scale.value;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;

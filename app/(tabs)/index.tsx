@@ -492,7 +492,7 @@ export default function TreeScreen() {
         animated
       );
     },
-    [originPoint, viewportSize.height, viewportSize.width]
+    [originPoint]
   );
 
   useEffect(() => {
