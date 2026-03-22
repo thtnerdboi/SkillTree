@@ -223,5 +223,5 @@ export const socialRouter = createTRPCRouter({
   healthCheck: publicProcedure.query(() => ({
     status: "ok",
     timestamp: Date.now(),
-  })),
+  }))
 });

@@ -18,15 +18,19 @@ import {
   Activity,
   Award,
   Briefcase,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Eye,
   Flame,
   Hammer,
   Heart,
   Lightbulb,
   Lock,
+  Minus,
   MoonStar,
   PenTool,
+  Plus,
   Rocket,
   Sparkles,
   Star,
@@ -85,8 +89,10 @@ const ORIGIN_BOTTOM_PADDING = 360;
 const ORIGIN_SIZE = 128;
 const NODE_SIZE = 94;
 const GLOW_SIZE = 170;
-const HEADER_HEIGHT = 232;
-const MAP_BOTTOM_PADDING = 228;
+const HEADER_EXPANDED_HEIGHT = 232;
+const HEADER_COLLAPSED_HEIGHT = 86;
+const MIN_MAP_SCALE = 0.88;
+const MAX_MAP_SCALE = 1.24;
 const LINE_GLOW_WIDTH = 10;
 const LINE_CORE_WIDTH = 4.5;
 const LABEL_PILL_WIDTH = 132;
@@ -379,6 +385,11 @@ export default function TreeScreen() {
   const [selectedNode, setSelectedNode] = useState<SkillNodeItem | null>(null);
   const [canvasReady, setCanvasReady] = useState<boolean>(false);
 
+  // Layout State
+  const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(false);
+  const [mapScale, setMapScale] = useState<number>(1);
+  const headerExpandAnim = useRef(new Animated.Value(1)).current;
+
   const hasCentered = useRef(false);
   const canvasRef = useRef<PanZoomCanvasRef>(null);
 
@@ -398,6 +409,12 @@ export default function TreeScreen() {
   const [xpGained, setXpGained] = useState<number>(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string>("calm");
 
+  const handleZoom = useCallback((direction: 1 | -1) => {
+    setMapScale((current) => {
+      return clamp(Number((current + direction * 0.12).toFixed(2)), MIN_MAP_SCALE, MAX_MAP_SCALE);
+    });
+  }, []);
+
   const flashXP = useCallback(
     (amount: number) => {
       setXpGained(amount);
@@ -415,7 +432,6 @@ export default function TreeScreen() {
     async (answers: OnboardingAnswers) => {
       setGeneratingChallenges(true);
       setGenerateError(null);
-      console.log("[onboard] Building challenge tree from default challenges");
       try {
         const generatedNodes = await generateTreeMutation.mutateAsync({
           mind: answers.mind,
@@ -431,14 +447,8 @@ export default function TreeScreen() {
             allGenerated[node.id] = node.defaultChallenges;
           }
         });
-        console.log(
-          "[onboard] Built challenges for",
-          Object.keys(allGenerated).length,
-          "nodes"
-        );
         completeOnboarding(answers, allGenerated);
       } catch (error) {
-        console.error("[onboard] Generation failed:", error);
         setGenerateError("Failed to connect to AI. Tap retry.");
       } finally {
         setGeneratingChallenges(false);
@@ -455,9 +465,15 @@ export default function TreeScreen() {
   const currentPrestigeRank = getPrestigeRank(state.prestigeCount);
   const maxTreeLevel = TREE_LEVELS[TREE_LEVELS.length - 1]?.number ?? 1;
 
-  const canvasWidth = Math.max(width * 3.4, 1680);
-  const originY = TREE_TOP_PADDING + maxTreeLevel * LEVEL_SPACING;
-  const canvasHeight = originY + ORIGIN_BOTTOM_PADDING;
+  // Semantic Zoom Math
+  const baseCanvasWidth = Math.max(width * 3.4, 1680);
+  const baseOriginY = TREE_TOP_PADDING + maxTreeLevel * LEVEL_SPACING;
+  const baseCanvasHeight = baseOriginY + ORIGIN_BOTTOM_PADDING;
+  const canvasWidth = baseCanvasWidth * mapScale;
+  const originY = baseOriginY * mapScale;
+  const canvasHeight = baseCanvasHeight * mapScale;
+  const headerHeight = headerCollapsed ? HEADER_COLLAPSED_HEIGHT : HEADER_EXPANDED_HEIGHT;
+
   const originPoint = useMemo<TreePoint>(
     () => ({ x: canvasWidth * 0.5, y: originY }),
     [canvasWidth, originY]
@@ -478,6 +494,15 @@ export default function TreeScreen() {
   );
 
   useEffect(() => {
+    Animated.spring(headerExpandAnim, {
+      toValue: headerCollapsed ? 0 : 1,
+      useNativeDriver: false,
+      tension: 170,
+      friction: 20,
+    }).start();
+  }, [headerCollapsed, headerExpandAnim]);
+
+  useEffect(() => {
     if (!hasCentered.current && state.onboardingComplete) {
       setTimeout(() => {
         centerOrigin(false);
@@ -496,21 +521,25 @@ export default function TreeScreen() {
           candidate.domainId === node.domainId &&
           candidate.levelNumber === node.levelNumber
       ).sort((left, right) => left.xFrac - right.xFrac);
+      
       const siblingIndex = Math.max(
         siblings.findIndex((candidate) => candidate.id === node.id),
         0
       );
-      const siblingSpread =
-        siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
+      const siblingSpread = siblings.length > 1 ? siblingIndex - (siblings.length - 1) / 2 : 0;
       const levelWave = (node.levelNumber % 2 === 0 ? 1 : -1) * 14;
-      const yOffset = siblingSpread * 124 + levelWave;
+      
+      // Scale offsets dynamically based on the Map Scale buttons
+      const scaledLevelSpacing = LEVEL_SPACING * mapScale;
+      const scaledYOffset = (siblingSpread * 124 + levelWave) * mapScale;
+      
       accumulator[node.id] = {
         x: canvasWidth * clampedXFrac,
-        y: originY - node.levelNumber * LEVEL_SPACING + yOffset,
+        y: originY - node.levelNumber * scaledLevelSpacing + scaledYOffset,
       };
       return accumulator;
     }, {});
-  }, [canvasWidth, originY]);
+  }, [canvasWidth, mapScale, originY]);
 
   const connections = useMemo(() => {
     return SKILL_NODES.flatMap((node) => {
@@ -704,7 +733,7 @@ export default function TreeScreen() {
         />
 
         <View style={styles.headerWrap} pointerEvents="box-none">
-          <BlurView tint="dark" intensity={80} style={styles.headerBlur}>
+          <BlurView tint="dark" intensity={80} style={[styles.headerBlur, { minHeight: headerHeight }]}>
             <View style={styles.headerTopRow}>
               <View style={styles.headerLeft}>
                 <Text style={styles.brand}>SkillTree</Text>
@@ -719,84 +748,131 @@ export default function TreeScreen() {
                   ) : null}
                 </View>
               </View>
-              <ProgressRing completed={completedChallenges} total={totalChallenges} />
-            </View>
-
-            <View style={styles.headerStatsRow}>
-              <View style={styles.headerPrimaryStat}>
-                <Text style={styles.headerStatEyebrow}>Completed</Text>
-                <Text style={styles.headerStatValue}>
-                  {completedChallenges}
-                  <Text style={styles.headerStatMuted}>/{totalChallenges}</Text>
-                </Text>
-              </View>
-              <View style={styles.headerStatDivider} />
-              <View style={styles.headerPrimaryStat}>
-                <Text style={styles.headerStatEyebrow}>Level</Text>
-                <Text style={styles.headerStatValue}>LV{currentLevel}</Text>
-              </View>
-              <View
-                style={[
-                  styles.rankPill,
-                  {
-                    borderColor: alpha(currentPrestigeRank.color, "38"),
-                    backgroundColor: alpha(currentPrestigeRank.color, "14"),
-                  },
-                ]}
-              >
-                <Trophy
-                  size={12}
-                  color={currentPrestigeRank.color}
-                  strokeWidth={2.2}
-                />
-                <Text
-                  style={[
-                    styles.rankPillText,
-                    { color: currentPrestigeRank.color },
-                  ]}
+              <View style={styles.headerTopActions}>
+                <ProgressRing completed={completedChallenges} total={totalChallenges} />
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setHeaderCollapsed((current) => !current);
+                  }}
+                  style={styles.headerToggleButton}
+                  testID="header-toggle-button"
                 >
-                  {currentPrestigeRank.name}
-                </Text>
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          rotate: headerExpandAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ["0deg", "180deg"],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <ChevronDown size={18} color="#F8FAFF" strokeWidth={2.4} />
+                  </Animated.View>
+                </Pressable>
               </View>
             </View>
 
-            <View style={styles.legendWrap}>
-              {(["mind", "body", "craft"] as const).map((domain) => (
-                <View
-                  key={domain}
-                  style={[
-                    styles.legendItem,
+            <Animated.View
+              style={[
+                styles.headerContent,
+                {
+                  opacity: headerExpandAnim,
+                  maxHeight: headerExpandAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 220],
+                  }),
+                  transform: [
                     {
-                      backgroundColor: alpha(DOMAIN_COLOR[domain], "14"),
-                      borderColor: alpha(DOMAIN_COLOR[domain], "24"),
+                      translateY: headerExpandAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-12, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+              pointerEvents={headerCollapsed ? "none" : "auto"}
+            >
+              <View style={styles.headerStatsRow}>
+                <View style={styles.headerPrimaryStat}>
+                  <Text style={styles.headerStatEyebrow}>Completed</Text>
+                  <Text style={styles.headerStatValue}>
+                    {completedChallenges}
+                    <Text style={styles.headerStatMuted}>/{totalChallenges}</Text>
+                  </Text>
+                </View>
+                <View style={styles.headerStatDivider} />
+                <View style={styles.headerPrimaryStat}>
+                  <Text style={styles.headerStatEyebrow}>Level</Text>
+                  <Text style={styles.headerStatValue}>LV{currentLevel}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.rankPill,
+                    {
+                      borderColor: alpha(currentPrestigeRank.color, "38"),
+                      backgroundColor: alpha(currentPrestigeRank.color, "14"),
                     },
                   ]}
                 >
+                  <Trophy
+                    size={12}
+                    color={currentPrestigeRank.color}
+                    strokeWidth={2.2}
+                  />
+                  <Text
+                    style={[
+                      styles.rankPillText,
+                      { color: currentPrestigeRank.color },
+                    ]}
+                  >
+                    {currentPrestigeRank.name}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.legendWrap}>
+                {(["mind", "body", "craft"] as const).map((domain) => (
+                  <View
+                    key={domain}
+                    style={[
+                      styles.legendItem,
+                      {
+                        backgroundColor: alpha(DOMAIN_COLOR[domain], "14"),
+                        borderColor: alpha(DOMAIN_COLOR[domain], "24"),
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.legendDot,
+                        { backgroundColor: DOMAIN_COLOR[domain] },
+                      ]}
+                    />
+                    <Text style={styles.legendLabel}>{DOMAIN_LABEL[domain]}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.xpBarWrap}>
+                <Text style={styles.xpBarLabel}>
+                  LV{currentLevel} · {Math.max(0, state.xp - xpCurrent)} /{" "}
+                  {Math.max(0, xpNext - xpCurrent)} XP to next level
+                </Text>
+                <View style={styles.xpBarTrack}>
                   <View
                     style={[
-                      styles.legendDot,
-                      { backgroundColor: DOMAIN_COLOR[domain] },
+                      styles.xpBarFill,
+                      { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` },
                     ]}
                   />
-                  <Text style={styles.legendLabel}>{DOMAIN_LABEL[domain]}</Text>
                 </View>
-              ))}
-            </View>
-
-            <View style={styles.xpBarWrap}>
-              <Text style={styles.xpBarLabel}>
-                LV{currentLevel} · {Math.max(0, state.xp - xpCurrent)} /{" "}
-                {Math.max(0, xpNext - xpCurrent)} XP to next level
-              </Text>
-              <View style={styles.xpBarTrack}>
-                <View
-                  style={[
-                    styles.xpBarFill,
-                    { width: `${Math.min(xpProgress * 100, 100)}%` as `${number}%` },
-                  ]}
-                />
               </View>
-            </View>
+            </Animated.View>
           </BlurView>
         </View>
 
@@ -844,6 +920,7 @@ export default function TreeScreen() {
 
                 const connectorActive = isNodeUnlocked(childNode.id) || isNodeComplete(parentId);
                 const color = DOMAIN_COLOR[childNode.domainId];
+                
                 const dx = childPoint.x - parentPoint.x;
                 const dy = childPoint.y - parentPoint.y;
                 const controlOffsetX = dx * 0.32;
@@ -897,6 +974,7 @@ export default function TreeScreen() {
                 </View>
               </View>
             </View>
+
             <View
               pointerEvents="none"
               style={[
@@ -967,16 +1045,36 @@ export default function TreeScreen() {
         </View>
 
         {canvasReady ? (
-          <Pressable
-            style={styles.centerButtonWrap}
-            onPress={() => centerOrigin(true)}
-            testID="center-origin-button"
-          >
-            <BlurView tint="dark" intensity={82} style={styles.centerButton}>
-              <Zap size={16} color={Colors.light.tint} strokeWidth={2.4} />
-              <Text style={styles.centerButtonText}>Center Origin</Text>
-            </BlurView>
-          </Pressable>
+          <>
+            <Pressable
+              style={styles.zoomControlsWrap}
+              onPress={() => handleZoom(1)}
+              testID="zoom-in-button"
+            >
+              <BlurView tint="dark" intensity={82} style={styles.zoomButton}>
+                <Plus size={16} color={Colors.light.text} strokeWidth={2.5} />
+              </BlurView>
+            </Pressable>
+            <Pressable
+              style={styles.zoomControlsWrapBottom}
+              onPress={() => handleZoom(-1)}
+              testID="zoom-out-button"
+            >
+              <BlurView tint="dark" intensity={82} style={styles.zoomButton}>
+                <Minus size={16} color={Colors.light.text} strokeWidth={2.5} />
+              </BlurView>
+            </Pressable>
+            <Pressable
+              style={styles.centerButtonWrap}
+              onPress={() => centerOrigin(true)}
+              testID="center-origin-button"
+            >
+              <BlurView tint="dark" intensity={82} style={styles.centerButton}>
+                <Zap size={16} color={Colors.light.tint} strokeWidth={2.4} />
+                <Text style={styles.centerButtonText}>Center Origin</Text>
+              </BlurView>
+            </Pressable>
+          </>
         ) : null}
 
         {selectedNode ? (
@@ -1140,7 +1238,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 16,
+    paddingBottom: 10,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
@@ -1153,6 +1251,24 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
+  },
+  headerTopActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerToggleButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  headerContent: {
+    overflow: "hidden",
   },
   greetingRow: {
     flexDirection: "row",
@@ -1268,9 +1384,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#E8F5FF",
   },
+  collapseToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingTop: 14,
+    paddingBottom: 4,
+  },
+  collapseText: {
+    fontFamily: "OutfitBold",
+    fontSize: 11,
+    color: Colors.light.muted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
   xpFlash: {
     position: "absolute",
-    top: HEADER_HEIGHT - 18,
+    top: HEADER_EXPANDED_HEIGHT - 18,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1462,6 +1593,38 @@ const styles = StyleSheet.create({
   originLabel: {
     color: Colors.light.text,
     fontSize: 16,
+  },
+  zoomControlsWrap: {
+    position: "absolute",
+    left: 18,
+    bottom: 164,
+    zIndex: 25,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  zoomControlsWrapBottom: {
+    position: "absolute",
+    left: 18,
+    bottom: 104,
+    zIndex: 25,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  zoomButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   centerButtonWrap: {
     position: "absolute",

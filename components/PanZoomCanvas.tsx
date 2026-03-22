@@ -21,8 +21,6 @@ interface Props {
 
 export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
   ({ children, canvasWidth, canvasHeight }, ref) => {
-    const scale = useSharedValue(1);
-    const savedScale = useSharedValue(1);
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
     const savedTranslateX = useSharedValue(0);
@@ -32,24 +30,21 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
       centerOn: (x, y, screenWidth, screenHeight, animated = true) => {
         cancelAnimation(translateX);
         cancelAnimation(translateY);
-        cancelAnimation(scale);
 
+        // Calculate exactly where the camera needs to pan to center the target
         const targetX = (screenWidth / 2) - x;
         const targetY = (screenHeight / 2) - y;
 
         if (animated) {
           translateX.value = withTiming(targetX, { duration: 650 });
           translateY.value = withTiming(targetY, { duration: 650 });
-          scale.value = withTiming(1, { duration: 650 });
         } else {
           translateX.value = targetX;
           translateY.value = targetY;
-          scale.value = 1;
         }
 
         savedTranslateX.value = targetX;
         savedTranslateY.value = targetY;
-        savedScale.value = 1;
       }
     }));
 
@@ -69,32 +64,15 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         translateY.value = withDecay({ velocity: e.velocityY, deceleration: 0.998 });
       });
 
-    const pinch = Gesture.Pinch()
-      .onStart(() => {
-        cancelAnimation(scale);
-        savedScale.value = scale.value;
-      })
-      .onUpdate((e) => {
-        scale.value = savedScale.value * e.scale;
-      })
-      .onEnd(() => {
-        const clampedScale = Math.max(0.3, Math.min(scale.value, 2.0));
-        scale.value = withTiming(clampedScale, { duration: 250 });
-        savedScale.value = clampedScale;
-      });
-
-    const composed = Gesture.Simultaneous(pan, pinch);
-
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
-        { scale: scale.value },
       ],
     }));
 
     return (
-      <GestureDetector gesture={composed}>
+      <GestureDetector gesture={pan}>
         <Animated.View style={[styles.canvas, animatedStyle, { width: canvasWidth, height: canvasHeight }]}>
           {children}
         </Animated.View>
