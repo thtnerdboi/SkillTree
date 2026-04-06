@@ -122,6 +122,10 @@ export const socialRouter = createTRPCRouter({
   createSubscriptionIntent: protectedProcedure
     .input(z.object({ userId: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
+      if (ctx.userId !== input.userId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "You can only subscribe as yourself." });
+      }
+
       const stripeSecret = process.env.STRIPE_SECRET_KEY;
       const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
 
@@ -136,6 +140,31 @@ export const socialRouter = createTRPCRouter({
 
       console.log("[social] Processing Stripe intent for user:", input.userId);
 
+      const postStripeForm = async <T = any>(
+        path: string,
+        body: URLSearchParams,
+        extraHeaders?: Record<string, string>
+      ): Promise<T> => {
+        const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripeSecret}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(extraHeaders ?? {}),
+          },
+          body: body.toString(),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data?.error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: data?.error?.message ?? `Stripe request failed for ${path}.`,
+          });
+        }
+        return data as T;
+      };
+
       const user = await storeApi.getUser(input.userId);
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User must exist in database to create a subscription." });
@@ -145,22 +174,13 @@ export const socialRouter = createTRPCRouter({
 
       if (!customerId) {
         console.log("[social] Creating new Stripe Customer...");
-        const customerRes = await fetch("https://api.stripe.com/v1/customers", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${stripeSecret}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams({
+        const customerData = await postStripeForm<{ id: string }>(
+          "customers",
+          new URLSearchParams({
             "metadata[userId]": input.userId,
             description: `SkillTree user ${input.userId}`,
-          }).toString(),
-        });
-        
-        const customerData = await customerRes.json();
-        if (customerData.error) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: customerData.error.message });
-        }
+          })
+        );
         
         customerId = customerData.id;
 
@@ -170,44 +190,31 @@ export const socialRouter = createTRPCRouter({
         });
       }
 
-      const ephemeralRes = await fetch("https://api.stripe.com/v1/ephemeral_keys", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeSecret}`,
-          "Stripe-Version": "2023-10-16",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
+      const ephemeralData = await postStripeForm<{ secret?: string }>(
+        "ephemeral_keys",
+        new URLSearchParams({
           customer: customerId as string,
-        }).toString(),
-      });
-      const ephemeralData = await ephemeralRes.json();
+        }),
+        { "Stripe-Version": "2025-03-31.basil" }
+      );
 
-      const subRes = await fetch("https://api.stripe.com/v1/subscriptions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeSecret}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
+      const subscription = await postStripeForm<any>(
+        "subscriptions",
+        new URLSearchParams({
           customer: customerId as string,
           "items[0][price]": priceId,
           payment_behavior: "default_incomplete",
           "expand[]": "latest_invoice.payment_intent",
-        }).toString(),
-      });
-      
-      const subscription = await subRes.json();
-      if (subscription.error) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: subscription.error.message });
-      }
+        })
+      );
 
       const clientSecret = subscription?.latest_invoice?.payment_intent?.client_secret;
+      const ephemeralKey = ephemeralData?.secret;
 
-      if (!clientSecret) {
+      if (!clientSecret || !ephemeralKey) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Stripe did not return a client secret.",
+          message: "Stripe did not return complete payment sheet data.",
         });
       }
 
@@ -215,7 +222,7 @@ export const socialRouter = createTRPCRouter({
       
       return { 
         clientSecret,
-        ephemeralKey: ephemeralData.secret,
+        ephemeralKey,
         customer: customerId 
       };
     }),
