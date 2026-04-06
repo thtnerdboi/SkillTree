@@ -4,18 +4,28 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db"; 
 import { users } from "../../db/schema"; 
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2023-10-16",
-});
+const getStripeClient = () => {
+  const secret = process.env.STRIPE_SECRET_KEY;
+  if (!secret) {
+    throw new Error("Missing STRIPE_SECRET_KEY.");
+  }
+  return new Stripe(secret);
+};
 
 // We export a standalone Hono router for the webhook
 export const stripeWebhookRouter = new Hono();
 
 stripeWebhookRouter.post("/", async (c) => {
+  const stripe = getStripeClient();
   const signature = c.req.header("stripe-signature");
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   
   if (!signature) {
     return c.json({ error: "Missing stripe-signature header" }, 400);
+  }
+
+  if (!webhookSecret) {
+    return c.json({ error: "Missing STRIPE_WEBHOOK_SECRET on server." }, 500);
   }
 
   // 🔥 Get the raw text body BEFORE anything tries to parse it into JSON
@@ -26,7 +36,7 @@ stripeWebhookRouter.post("/", async (c) => {
     event = stripe.webhooks.constructEvent(
       rawBody,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET! 
+      webhookSecret 
     );
   } catch (err: any) {
     console.error(`❌ Webhook signature verification failed: ${err.message}`);

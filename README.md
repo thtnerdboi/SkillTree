@@ -43,6 +43,22 @@ Optional flags:
 - `RUN_GEMINI_TEST=1` to include the Gemini generation call
 - `TEST_USER_ID=my-user-id` to reuse one user for Stripe tests
 
+## ☁️ Render deployment checklist
+
+This backend can run on Render, but these env vars must be configured:
+
+- `DATABASE_URL` (required)
+- `STRIPE_SECRET_KEY` (required for Stripe routes)
+- `STRIPE_MONTHLY_PRICE_ID` (required for subscription intent)
+- `STRIPE_WEBHOOK_SECRET` (required for webhook signature verification)
+- `GEMINI_API_KEY` (required for `ai.generateTree`)
+
+Recommended Render start command:
+
+```bash
+npm ci && npm run backend
+```
+
 ## ☕ Buy me a Coffee
 I am solo vibecoding this so it will take time, if you want to support me you can buy me a coffee with the link below
 https://buymeacoffee.com/thtnerdboi
