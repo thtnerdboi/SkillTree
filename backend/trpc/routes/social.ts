@@ -195,7 +195,7 @@ export const socialRouter = createTRPCRouter({
         new URLSearchParams({
           customer: customerId as string,
         }),
-        { "Stripe-Version": "2025-03-31.basil" }
+        { "Stripe-Version": "2023-10-16" }
       );
 
       const subscription = await postStripeForm<any>(
