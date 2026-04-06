@@ -8,7 +8,8 @@
     "ios": "npx expo run:ios",
     "web": "npx expo start --web",
     "lint": "expo lint",
-    "backend": "npx tsx backend/hono.ts"
+    "backend": "npx tsx backend/hono.ts",
+    "test:apis": "npx tsx scripts/api-smoke.ts"
   },
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.4.3",
