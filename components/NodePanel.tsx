@@ -88,7 +88,6 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
     ]).start(() => onClose());
   }, [cardScale, cardTranslate, onClose, overlayOpacity]);
 
-  // AI Generation Logic restored!
   const regenerateNodeMutation = useMutation({
     mutationFn: async ({ goal }: { goal: string }) => {
       const result = await generateObject({
@@ -178,182 +177,181 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
             ]}
           >
             <BlurView tint="dark" intensity={80} style={styles.blurShell}>
-              <LinearGradient
-                colors={[alpha(nodeColor, "50"), alpha(nodeColor, "18"), "rgba(6,8,16,0.96)"]}
-                start={{ x: 0.15, y: 0 }}
-                end={{ x: 0.85, y: 1 }}
-                style={styles.hero}
-              >
-                <View style={styles.heroTopBar}>
-                  <View style={[styles.domainChip, { borderColor: alpha(nodeColor, "45"), backgroundColor: alpha(nodeColor, "20") }]}>
-                    <Text style={[styles.domainChipText, { color: nodeColor }]}>{DOMAIN_LABEL[node.domainId]}</Text>
-                  </View>
-                  <Pressable style={styles.closeButton} onPress={close} testID="close-panel">
-                    <BlurView tint="dark" intensity={60} style={styles.closeButtonBlur}>
-                      <X size={16} color={Colors.light.text} strokeWidth={2.4} />
-                    </BlurView>
-                  </Pressable>
-                </View>
-
-                <View style={styles.heroCenter}>
-                  <View style={[styles.heroGlowOuter, { backgroundColor: alpha(nodeColor, "18") }]} />
-                  <View style={[styles.heroGlowMid, { backgroundColor: alpha(nodeColor, "22") }]} />
-                  <View
-                    style={[
-                      styles.heroIconShell,
-                      {
-                        borderColor: alpha(nodeColor, "4A"),
-                        backgroundColor: alpha(nodeColor, "12"),
-                      },
-                    ]}
-                  >
-                    {NodeIcon ? (
-                      <NodeIcon size={72} color={nodeColor} strokeWidth={2.1} />
-                    ) : (
-                      <Zap size={72} color={nodeColor} strokeWidth={2.1} />
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.heroTextWrap}>
-                  <Text style={styles.title}>{node.title}</Text>
-                  <Text style={styles.description}>{node.description}</Text>
-                  <View style={styles.metaRow}>
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Progress</Text>
-                      <Text style={[styles.metaValue, { color: nodeColor }]}>
-                        {nodeProgress}/{activeChallenges.length}
-                      </Text>
-                    </View>
-                    <View style={styles.metaDivider} />
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Status</Text>
-                      <Text style={[styles.metaValue, { color: nodeComplete ? nodeColor : Colors.light.text }]}>
-                        {nodeComplete ? "Completed" : nodeUnlocked ? "Active" : "Locked"}
-                      </Text>
-                    </View>
-                    <View style={styles.metaDivider} />
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Domain</Text>
-                      <Text style={styles.metaValue}>{DOMAIN_LABEL[node.domainId]}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${Math.max(8, completionRatio * 100)}%` as `${number}%`, backgroundColor: nodeColor }]} />
-                  </View>
-                </View>
-              </LinearGradient>
-
               <ScrollView
                 style={styles.contentScroll}
-                contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
               >
-                {nodeComplete ? (
-                  <View style={[styles.bannerCard, { borderColor: alpha(nodeColor, "38") }]}>
-                    <BlurView tint="dark" intensity={55} style={styles.bannerBlur}>
-                      <Check size={16} color={nodeColor} strokeWidth={2.8} />
-                      <Text style={[styles.bannerText, { color: nodeColor }]}>Node mastered. Bonus XP secured.</Text>
-                    </BlurView>
-                  </View>
-                ) : null}
-
-                {/* Restored Personalize Section */}
-                {nodeUnlocked && (
-                  <View style={[styles.regenSection, { borderColor: alpha(nodeColor, "25") }]}>
-                    <BlurView tint="dark" intensity={40} style={styles.regenBlur}>
-                      <View style={styles.regenLabelRow}>
-                        <Sparkles size={12} color={nodeColor} strokeWidth={2.5} />
-                        <Text style={styles.regenLabel}>PERSONALIZE CHALLENGES</Text>
-                      </View>
-                      <TextInput
-                        style={[styles.regenInput, { borderColor: goalInput.length > 0 ? alpha(nodeColor, "50") : "rgba(255,255,255,0.08)" }]}
-                        value={goalInput}
-                        onChangeText={setGoalInput}
-                        placeholder={node.goalPrompt}
-                        placeholderTextColor="rgba(255,255,255,0.3)"
-                        multiline
-                        numberOfLines={2}
-                      />
-                      <TouchableOpacity
-                        style={[
-                          styles.regenBtn,
-                          goalInput.trim().length > 8 && !regenerateNodeMutation.isPending
-                            ? { backgroundColor: nodeColor }
-                            : { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
-                        ]}
-                        onPress={handleRegenerate}
-                        disabled={goalInput.trim().length <= 8 || regenerateNodeMutation.isPending}
-                      >
-                        {regenerateNodeMutation.isPending ? (
-                          <ActivityIndicator size="small" color={nodeColor} />
-                        ) : (
-                          <>
-                            <Sparkles size={14} color={goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)"} strokeWidth={2.5} />
-                            <Text style={[styles.regenBtnText, { color: goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)" }]}>
-                              {hasAiChallenges ? "Regenerate Goals" : "Generate Custom Goals"}
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    </BlurView>
-                  </View>
-                )}
-
-                {activeChallenges.map((challenge) => {
-                  const done = state.challengeProgress[challenge.id] ?? false;
-
-                  return (
-                    <Pressable
-                      key={challenge.id}
-                      onPress={async () => {
-                        if (!nodeUnlocked) return;
-                        toggleChallenge(challenge.id, node.id, challenge.xp);
-                        if (!done) {
-                          flashXP(challenge.xp);
-                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        } else {
-                          await Haptics.selectionAsync();
-                        }
-                      }}
-                      testID={`challenge-${challenge.id}`}
-                      style={({ pressed }) => [styles.challengeCardWrap, pressed && styles.challengeCardPressed]}
-                    >
-                      <BlurView tint="dark" intensity={60} style={[styles.challengeCard, !nodeUnlocked && styles.challengeLocked]}>
-                        <View style={styles.challengeLeft}>
-                          <View
-                            style={[
-                              styles.checkOrb,
-                              {
-                                borderColor: done ? nodeColor : alpha(nodeColor, "40"),
-                                backgroundColor: done ? nodeColor : alpha(nodeColor, "14"),
-                              },
-                            ]}
-                          >
-                            {done ? (
-                              <Check size={12} color="#02050C" strokeWidth={3} />
-                            ) : !nodeUnlocked ? (
-                              <Lock size={12} color={Colors.light.muted} strokeWidth={2.4} />
-                            ) : null}
-                          </View>
-                          <View style={styles.challengeTextBlock}>
-                            <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
-                            <Text style={styles.challengeDetail}>{challenge.detail}</Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.challengeRight}>
-                          <View style={[styles.xpPill, { borderColor: alpha(nodeColor, "30"), backgroundColor: alpha(nodeColor, "14") }]}>
-                            <Zap size={10} color={nodeColor} strokeWidth={2.5} />
-                            <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
-                          </View>
-                        </View>
+                <LinearGradient
+                  colors={[alpha(nodeColor, "50"), alpha(nodeColor, "18"), "rgba(6,8,16,0.96)"]}
+                  start={{ x: 0.15, y: 0 }}
+                  end={{ x: 0.85, y: 1 }}
+                  style={styles.hero}
+                >
+                  <View style={styles.heroTopBar}>
+                    <View style={[styles.domainChip, { borderColor: alpha(nodeColor, "45"), backgroundColor: alpha(nodeColor, "20") }]}>
+                      <Text style={[styles.domainChipText, { color: nodeColor }]}>{DOMAIN_LABEL[node.domainId]}</Text>
+                    </View>
+                    <Pressable style={styles.closeButton} onPress={close} testID="close-panel">
+                      <BlurView tint="dark" intensity={60} style={styles.closeButtonBlur}>
+                        <X size={16} color={Colors.light.text} strokeWidth={2.4} />
                       </BlurView>
                     </Pressable>
-                  );
-                })}
+                  </View>
 
+                  <View style={styles.heroCenter}>
+                    <View style={[styles.heroGlowOuter, { backgroundColor: alpha(nodeColor, "18") }]} />
+                    <View style={[styles.heroGlowMid, { backgroundColor: alpha(nodeColor, "22") }]} />
+                    <View
+                      style={[
+                        styles.heroIconShell,
+                        {
+                          borderColor: alpha(nodeColor, "4A"),
+                          backgroundColor: alpha(nodeColor, "12"),
+                        },
+                      ]}
+                    >
+                      {NodeIcon ? (
+                        <NodeIcon size={72} color={nodeColor} strokeWidth={2.1} />
+                      ) : (
+                        <Zap size={72} color={nodeColor} strokeWidth={2.1} />
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.heroTextWrap}>
+                    <Text style={styles.title}>{node.title}</Text>
+                    <Text style={styles.description}>{node.description}</Text>
+                    <View style={styles.metaRow}>
+                      <View style={styles.metaItem}>
+                        <Text style={styles.metaLabel}>Progress</Text>
+                        <Text style={[styles.metaValue, { color: nodeColor }]}>
+                          {nodeProgress}/{activeChallenges.length}
+                        </Text>
+                      </View>
+                      <View style={styles.metaDivider} />
+                      <View style={styles.metaItem}>
+                        <Text style={styles.metaLabel}>Status</Text>
+                        <Text style={[styles.metaValue, { color: nodeComplete ? nodeColor : Colors.light.text }]}>
+                          {nodeComplete ? "Completed" : nodeUnlocked ? "Active" : "Locked"}
+                        </Text>
+                      </View>
+                      <View style={styles.metaDivider} />
+                      <View style={styles.metaItem}>
+                        <Text style={styles.metaLabel}>Domain</Text>
+                        <Text style={styles.metaValue}>{DOMAIN_LABEL[node.domainId]}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.max(8, completionRatio * 100)}%` as `${number}%`, backgroundColor: nodeColor }]} />
+                    </View>
+                  </View>
+                </LinearGradient>
+
+                <View style={styles.contentContainer}>
+                  {nodeComplete ? (
+                    <View style={[styles.bannerCard, { borderColor: alpha(nodeColor, "38") }]}>
+                      <BlurView tint="dark" intensity={55} style={styles.bannerBlur}>
+                        <Check size={16} color={nodeColor} strokeWidth={2.8} />
+                        <Text style={[styles.bannerText, { color: nodeColor }]}>Node mastered. Bonus XP secured.</Text>
+                      </BlurView>
+                    </View>
+                  ) : null}
+
+                  {nodeUnlocked && (
+                    <View style={[styles.regenSection, { borderColor: alpha(nodeColor, "25") }]}>
+                      <BlurView tint="dark" intensity={40} style={styles.regenBlur}>
+                        <View style={styles.regenLabelRow}>
+                          <Sparkles size={12} color={nodeColor} strokeWidth={2.5} />
+                          <Text style={styles.regenLabel}>PERSONALIZE CHALLENGES</Text>
+                        </View>
+                        <TextInput
+                          style={[styles.regenInput, { borderColor: goalInput.length > 0 ? alpha(nodeColor, "50") : "rgba(255,255,255,0.08)" }]}
+                          value={goalInput}
+                          onChangeText={setGoalInput}
+                          placeholder={node.goalPrompt}
+                          placeholderTextColor="rgba(255,255,255,0.3)"
+                          multiline
+                          numberOfLines={2}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.regenBtn,
+                            goalInput.trim().length > 8 && !regenerateNodeMutation.isPending
+                              ? { backgroundColor: nodeColor }
+                              : { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+                          ]}
+                          onPress={handleRegenerate}
+                          disabled={goalInput.trim().length <= 8 || regenerateNodeMutation.isPending}
+                        >
+                          {regenerateNodeMutation.isPending ? (
+                            <ActivityIndicator size="small" color={nodeColor} />
+                          ) : (
+                            <>
+                              <Sparkles size={14} color={goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)"} strokeWidth={2.5} />
+                              <Text style={[styles.regenBtnText, { color: goalInput.trim().length > 8 ? "#000" : "rgba(255,255,255,0.4)" }]}>
+                                {hasAiChallenges ? "Regenerate Goals" : "Generate Custom Goals"}
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </BlurView>
+                    </View>
+                  )}
+
+                  {activeChallenges.map((challenge) => {
+                    const done = state.challengeProgress[challenge.id] ?? false;
+
+                    return (
+                      <Pressable
+                        key={challenge.id}
+                        onPress={async () => {
+                          if (!nodeUnlocked) return;
+                          toggleChallenge(challenge.id, node.id, challenge.xp);
+                          if (!done) {
+                            flashXP(challenge.xp);
+                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          } else {
+                            await Haptics.selectionAsync();
+                          }
+                        }}
+                        testID={`challenge-${challenge.id}`}
+                        style={({ pressed }) => [styles.challengeCardWrap, pressed && styles.challengeCardPressed]}
+                      >
+                        <BlurView tint="dark" intensity={60} style={[styles.challengeCard, !nodeUnlocked && styles.challengeLocked]}>
+                          <View style={styles.challengeLeft}>
+                            <View
+                              style={[
+                                styles.checkOrb,
+                                {
+                                  borderColor: done ? nodeColor : alpha(nodeColor, "40"),
+                                  backgroundColor: done ? nodeColor : alpha(nodeColor, "14"),
+                                },
+                              ]}
+                            >
+                              {done ? (
+                                <Check size={12} color="#02050C" strokeWidth={3} />
+                              ) : !nodeUnlocked ? (
+                                <Lock size={12} color={Colors.light.muted} strokeWidth={2.4} />
+                              ) : null}
+                            </View>
+                            <View style={styles.challengeTextBlock}>
+                              <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
+                              <Text style={styles.challengeDetail}>{challenge.detail}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.challengeRight}>
+                            <View style={[styles.xpPill, { borderColor: alpha(nodeColor, "30"), backgroundColor: alpha(nodeColor, "14") }]}>
+                              <Zap size={10} color={nodeColor} strokeWidth={2.5} />
+                              <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
+                            </View>
+                          </View>
+                        </BlurView>
+                      </Pressable>
+                    );
+                  })}
+                </View>
                 <View style={styles.footerSpace} />
               </ScrollView>
             </BlurView>
@@ -393,7 +391,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(8,10,18,0.55)",
   },
   hero: {
-    minHeight: 360,
     paddingTop: 24,
     paddingHorizontal: 22,
     paddingBottom: 22,
@@ -430,7 +427,7 @@ const styles = StyleSheet.create({
   heroCenter: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
+    paddingVertical: 32,
   },
   heroGlowOuter: {
     position: "absolute",

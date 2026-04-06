@@ -33,15 +33,12 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
     canvasHeight,
     viewportWidth,
     viewportHeight,
-    minScale = 0.5,
-    maxScale = 2,
   }, ref) => {
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
-    const scale = useSharedValue(1);
+    const scale = useSharedValue(1); // Locked to 1
     const savedTranslateX = useSharedValue(0);
     const savedTranslateY = useSharedValue(0);
-    const savedScale = useSharedValue(1);
 
     const getBounds = (nextScale: number) => {
       'worklet';
@@ -98,32 +95,8 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         cancelAnimation(translateY);
         centerOnPoint(x, y, animated);
       },
-      zoomBy: (delta, animated = true) => {
-        cancelAnimation(scale);
-        cancelAnimation(translateX);
-        cancelAnimation(translateY);
-
-        const nextScale = clamp(scale.value + delta, minScale, maxScale);
-        const centerX = viewportWidth / 2;
-        const centerY = viewportHeight / 2;
-        const factor = nextScale / scale.value;
-        const targetX = centerX - factor * (centerX - translateX.value);
-        const targetY = centerY - factor * (centerY - translateY.value);
-        const clamped = clampTranslate(targetX, targetY, nextScale);
-
-        if (animated) {
-          scale.value = withTiming(nextScale, { duration: 220, easing: Easing.out(Easing.cubic) });
-          translateX.value = withTiming(clamped.x, { duration: 220, easing: Easing.out(Easing.cubic) });
-          translateY.value = withTiming(clamped.y, { duration: 220, easing: Easing.out(Easing.cubic) });
-        } else {
-          scale.value = nextScale;
-          translateX.value = clamped.x;
-          translateY.value = clamped.y;
-        }
-
-        savedScale.value = nextScale;
-        savedTranslateX.value = clamped.x;
-        savedTranslateY.value = clamped.y;
+      zoomBy: () => {
+        // Feature disabled to maintain premium feel, keeping function signature to prevent index.tsx crashes
       },
     }));
 
@@ -138,20 +111,18 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
-        const nextX = savedTranslateX.value + e.translationX;
+        // Lock X axis translation, only allow Y axis scrolling
+        const nextX = savedTranslateX.value; 
         const nextY = savedTranslateY.value + e.translationY;
+        
         const clamped = clampTranslate(nextX, nextY, scale.value);
         translateX.value = clamped.x;
         translateY.value = clamped.y;
       })
       .onEnd((e) => {
         const bounds = getBounds(scale.value);
-        translateX.value = withDecay({
-          velocity: e.velocityX,
-          deceleration: 0.994,
-          clamp: [bounds.minX, bounds.maxX],
-          rubberBandEffect: false,
-        });
+        
+        // Only decay the Y axis
         translateY.value = withDecay({
           velocity: e.velocityY,
           deceleration: 0.994,
@@ -159,34 +130,6 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
           rubberBandEffect: false,
         });
       });
-
-    const pinch = Gesture.Pinch()
-      .onStart((e) => {
-        cancelAnimation(scale);
-        cancelAnimation(translateX);
-        cancelAnimation(translateY);
-        savedScale.value = scale.value;
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
-      })
-      .onUpdate((e) => {
-        const nextScale = clamp(savedScale.value * e.scale, minScale, maxScale);
-        const ratio = nextScale / savedScale.value;
-        const nextX = e.focalX - ratio * (e.focalX - savedTranslateX.value);
-        const nextY = e.focalY - ratio * (e.focalY - savedTranslateY.value);
-        const clamped = clampTranslate(nextX, nextY, nextScale);
-
-        scale.value = nextScale;
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
-      })
-      .onEnd(() => {
-        savedScale.value = scale.value;
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
-      });
-
-    const gesture = Gesture.Simultaneous(pan, pinch);
 
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [
@@ -197,7 +140,7 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
     }));
 
     return (
-      <GestureDetector gesture={gesture}>
+      <GestureDetector gesture={pan}>
         <Animated.View style={[styles.canvas, animatedStyle, { width: canvasWidth, height: canvasHeight }]}>
           {children}
         </Animated.View>
