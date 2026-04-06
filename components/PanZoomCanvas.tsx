@@ -54,6 +54,11 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
       return { minX, maxX, minY, maxY };
     };
 
+    const isViewportReady = () => {
+      'worklet';
+      return viewportWidth > 0 && viewportHeight > 0;
+    };
+
     const clampTranslate = (x: number, y: number, nextScale: number) => {
       'worklet';
       const bounds = getBounds(nextScale);
