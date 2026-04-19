@@ -77,11 +77,24 @@ const createDefaultState = (): StoredState => ({
 export const [AppStateProvider, useAppState] = createContextHook(() => {
   const [state, setState] = useState<StoredState>(createDefaultState());
   const [prestigeReady, setPrestigeReady] = useState<boolean>(false);
+  const [pendingChallengeIds, setPendingChallengeIds] = useState<Record<string, boolean>>({});
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const upsertUserMutation = trpc.social.upsertUser.useMutation({
     onSuccess: () => console.log("[state] User synced to backend"),
     onError: (e) => console.log("[state] Backend sync failed:", e.message),
+  });
+
+  const completedChallengesQuery = trpc.progress.getCompletedChallenges.useQuery(
+    { userId: state.userId },
+    {
+      enabled: state.isAuthed && Boolean(state.userId),
+      staleTime: 30_000,
+    }
+  );
+
+  const addCompletedChallengeMutation = trpc.progress.addCompletedChallenge.useMutation({
+    onError: (e) => console.log("[state] Save completed challenge failed:", e.message),
   });
 
   const storedQuery = useQuery({
@@ -139,6 +152,23 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       }
     }
   }, [storedQuery.data]);
+
+  useEffect(() => {
+    if (!state.isAuthed || !completedChallengesQuery.data) return;
+
+    const remoteProgress: Record<string, boolean> = {};
+    completedChallengesQuery.data.forEach((entry) => {
+      remoteProgress[entry.challengeId] = true;
+    });
+
+    setState((current) => ({
+      ...current,
+      challengeProgress: {
+        ...current.challengeProgress,
+        ...remoteProgress,
+      },
+    }));
+  }, [state.isAuthed, completedChallengesQuery.data]);
 
   const updateState = useCallback(
     (updater: (current: StoredState) => StoredState) => {
@@ -222,6 +252,9 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   const toggleChallenge = useCallback(
     (challengeId: string, nodeId: string, challengeXp: number) => {
       console.log("[state] Toggle challenge:", challengeId, "node:", nodeId);
+
+      const wasCompleted = state.challengeProgress[challengeId] ?? false;
+
       updateState((current) => {
         const { xpDelta, nodeJustCompleted, levelJustCompleted, completedLevelNumber } =
           computeToggleXpDelta(
@@ -232,10 +265,10 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
             current.aiChallenges
           );
 
-        const wasCompleted = current.challengeProgress[challengeId] ?? false;
+        const currentlyCompleted = current.challengeProgress[challengeId] ?? false;
         const newProgress = {
           ...current.challengeProgress,
-          [challengeId]: !wasCompleted,
+          [challengeId]: !currentlyCompleted,
         };
 
         const prestigeMultiplier = getPrestigeXpMultiplier(current.prestigeCount);
@@ -243,7 +276,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         const finalMultiplier = prestigeMultiplier * proMultiplier;
         const finalXpDelta = xpDelta > 0 ? Math.round(xpDelta * finalMultiplier) : xpDelta;
 
-        const eventName = wasCompleted
+        const eventName = currentlyCompleted
           ? ANALYTICS_EVENTS.CHALLENGE_UNCOMPLETED
           : ANALYTICS_EVENTS.CHALLENGE_COMPLETED;
         analytics.track(eventName, { challengeId, nodeId, xp: challengeXp, isPro: current.isPro });
@@ -265,8 +298,34 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
           xp: Math.max(0, current.xp + finalXpDelta),
         };
       });
+
+      if (wasCompleted || !state.userId || !state.isAuthed) return;
+
+      setPendingChallengeIds((current) => ({ ...current, [challengeId]: true }));
+      addCompletedChallengeMutation.mutate(
+        {
+          userId: state.userId,
+          challengeId,
+          nodeId,
+          challengeXp,
+        },
+        {
+          onSettled: () => {
+            setPendingChallengeIds((current) => {
+              const next = { ...current };
+              delete next[challengeId];
+              return next;
+            });
+          },
+        }
+      );
     },
-    [updateState]
+    [updateState, state.challengeProgress, state.userId, state.isAuthed, addCompletedChallengeMutation]
+  );
+
+  const isChallengeSaving = useCallback(
+    (challengeId: string) => Boolean(pendingChallengeIds[challengeId]),
+    [pendingChallengeIds]
   );
 
   const setAiChallenges = useCallback(
@@ -460,6 +519,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       updateDisplayName,
       completeOnboarding,
       toggleChallenge,
+      isChallengeSaving,
       setAiChallenges,
       recordAiGeneration,
       addFriend,
@@ -489,6 +549,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       updateDisplayName,
       completeOnboarding,
       toggleChallenge,
+      isChallengeSaving,
       setAiChallenges,
       recordAiGeneration,
       addFriend,
