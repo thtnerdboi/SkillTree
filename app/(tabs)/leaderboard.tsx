@@ -1,150 +1,107 @@
 import React, { useMemo } from "react";
 import {
+  FlatList,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { Trophy, Medal } from "lucide-react-native";
+import { Crown, Medal, Trophy } from "lucide-react-native";
 
-import Colors from "../../constants/colors";
-import { trpc } from "../../lib/trpc";
-import { useAppState } from "../../state/app-state";
+const MOCK_USERS = [
+  { id: "usr_1", name: "Nova Quinn", xp: 12840 },
+  { id: "usr_2", name: "Ari Stone", xp: 12110 },
+  { id: "usr_3", name: "Kai Mercer", xp: 11490 },
+  { id: "usr_4", name: "Jules Park", xp: 10320 },
+  { id: "usr_5", name: "Remy Cross", xp: 9880 },
+  { id: "usr_6", name: "Sage Monroe", xp: 9340 },
+  { id: "usr_7", name: "Milan Frost", xp: 8750 },
+  { id: "usr_8", name: "Rory Vale", xp: 8210 },
+];
 
-const MEDAL_COLORS = ["#FFD700", "#C0C8D8", "#CD7F32"];
+const TOP_THREE_STYLES = {
+  1: { accent: "#E8C76D", border: "#5A4721", bg: "#191406" },
+  2: { accent: "#B7C0D8", border: "#3B445A", bg: "#10131C" },
+  3: { accent: "#D3986F", border: "#5B3A26", bg: "#1A100C" },
+} as const;
+
+type RankedUser = {
+  id: string;
+  name: string;
+  xp: number;
+  rank: number;
+};
 
 export default function LeaderboardScreen() {
-  const { state, weeklyCompletion } = useAppState();
-  const isReady = Boolean(state.userId && state.displayName && state.inviteCode);
+  const rankedUsers = useMemo<RankedUser[]>(() => {
+    return [...MOCK_USERS]
+      .sort((a, b) => b.xp - a.xp)
+      .map((user, index) => ({ ...user, rank: index + 1 }));
+  }, []);
 
-  const circleQuery = trpc.social.getCircleStats.useQuery(
-    { userId: state.userId },
-    { enabled: isReady, refetchInterval: 10000 }
-  );
+  const renderItem = ({ item }: { item: RankedUser }) => {
+    const topStyle = TOP_THREE_STYLES[item.rank as keyof typeof TOP_THREE_STYLES];
+    const isTopThree = item.rank <= 3;
 
-  const leaderboard = useMemo(() => {
-    const entries = circleQuery.data ?? [];
-    return [...entries].sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
-  }, [circleQuery.data]);
+    return (
+      <View
+        style={[
+          styles.row,
+          isTopThree && {
+            borderColor: topStyle.border,
+            backgroundColor: topStyle.bg,
+            shadowColor: topStyle.accent,
+          },
+        ]}
+      >
+        <View style={[styles.rankPill, isTopThree && { borderColor: topStyle.border }]}> 
+          {item.rank === 1 ? (
+            <Crown size={14} color={topStyle.accent} />
+          ) : item.rank <= 3 ? (
+            <Medal size={14} color={topStyle.accent} />
+          ) : (
+            <Text style={styles.rankText}>#{item.rank}</Text>
+          )}
+        </View>
 
-  const selfRank = leaderboard.findIndex((e) => e.userId === state.userId) + 1;
+        <View style={styles.nameBlock}>
+          <Text style={styles.name}>{item.name}</Text>
+          <Text style={[styles.subtitle, isTopThree && { color: topStyle.accent }]}>Elite Challenger</Text>
+        </View>
+
+        <View style={styles.xpBlock}>
+          <Text style={[styles.xpValue, isTopThree && { color: topStyle.accent }]}>{item.xp.toLocaleString()}</Text>
+          <Text style={styles.xpLabel}>XP</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const topUser = rankedUsers[0];
 
   return (
     <View style={styles.shell}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
+        <View style={styles.header}>
+          <Text style={styles.brand}>SKILLTREE</Text>
+          <Text style={styles.title}>Leaderboard</Text>
+          <View style={styles.heroCard}>
+            <View style={styles.heroTitleRow}>
+              <Trophy size={16} color="#E8C76D" />
+              <Text style={styles.heroLabel}>Top Performer</Text>
+            </View>
+            <Text style={styles.heroName}>{topUser.name}</Text>
+            <Text style={styles.heroXp}>{topUser.xp.toLocaleString()} XP</Text>
+          </View>
+        </View>
+
+        <FlatList
+          data={rankedUsers}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <Text style={styles.brand}>SKILLTREE</Text>
-            <Text style={styles.title}>Leaderboard</Text>
-          </View>
-
-          <View style={styles.selfCard}>
-            <View style={styles.selfTop}>
-              <View>
-                <Text style={styles.selfName}>
-                  {state.displayName || "You"}
-                </Text>
-                <Text style={styles.selfCode}>{state.inviteCode}</Text>
-              </View>
-              <View style={styles.selfStatGroup}>
-                <Text style={styles.selfPct}>{weeklyCompletion}%</Text>
-                <Text style={styles.selfStatLabel}>this week</Text>
-              </View>
-            </View>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${Math.min(weeklyCompletion, 100)}%` as `${number}%` },
-                ]}
-              />
-            </View>
-            {selfRank > 0 && (
-              <Text style={styles.selfRank}>
-                Rank #{selfRank} in your circle
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardTitleRow}>
-              <Trophy size={14} color={Colors.light.tint} strokeWidth={2} />
-              <Text style={styles.cardLabel}>RANKINGS</Text>
-            </View>
-
-            {circleQuery.isLoading ? (
-              <Text style={styles.emptyText}>Loading rankings...</Text>
-            ) : leaderboard.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  Add friends to start competing.
-                </Text>
-              </View>
-            ) : (
-              leaderboard.map((entry, index) => {
-                const isSelf = entry.userId === state.userId;
-                const medalColor = MEDAL_COLORS[index] ?? null;
-                const barWidth = Math.min(entry.weeklyCompletion, 100);
-
-                return (
-                  <View
-                    key={entry.userId}
-                    style={[
-                      styles.rankRow,
-                      isSelf && styles.rankRowSelf,
-                    ]}
-                  >
-                    <View style={styles.rankLeft}>
-                      {medalColor && index < 3 ? (
-                        <Medal
-                          size={18}
-                          color={medalColor}
-                          strokeWidth={2}
-                        />
-                      ) : (
-                        <Text style={styles.rankNum}>{index + 1}</Text>
-                      )}
-                    </View>
-
-                    <View style={styles.rankAvatar}>
-                      <Text style={styles.rankAvatarText}>
-                        {entry.name.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-
-                    <View style={styles.rankInfo}>
-                      <View style={styles.rankNameRow}>
-                        <Text style={[styles.rankName, isSelf && styles.rankNameSelf]}>
-                          {isSelf ? "You" : entry.name}
-                        </Text>
-                        <Text style={[styles.rankPct, isSelf && styles.rankPctSelf]}>
-                          {entry.weeklyCompletion}%
-                        </Text>
-                      </View>
-                      <View style={styles.rankBarTrack}>
-                        <View
-                          style={[
-                            styles.rankBarFill,
-                            {
-                              width: `${barWidth}%` as `${number}%`,
-                              backgroundColor: isSelf
-                                ? Colors.light.tint
-                                : "#3A4060",
-                            },
-                          ]}
-                        />
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </View>
-        </ScrollView>
+        />
       </SafeAreaView>
     </View>
   );
@@ -158,190 +115,117 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  scroll: {
-    padding: 22,
-    paddingBottom: 40,
-    gap: 16,
-  },
   header: {
-    paddingBottom: 4,
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    gap: 8,
   },
   brand: {
-    fontSize: 11,
+    color: "#5D7BFF",
     letterSpacing: 3,
-    color: Colors.light.tint,
-    fontWeight: "700",
     textTransform: "uppercase",
+    fontSize: 11,
+    fontFamily: "OutfitBold",
   },
   title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: Colors.light.text,
-    marginTop: 4,
-  },
-  selfCard: {
-    backgroundColor: "#0C1628",
-    borderRadius: 22,
-    padding: 20,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: `${Colors.light.tint}30`,
-    shadowColor: Colors.light.tint,
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  selfTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  selfName: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: Colors.light.text,
-  },
-  selfCode: {
-    fontSize: 11,
-    color: "#2A3560",
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginTop: 2,
-  },
-  selfStatGroup: {
-    alignItems: "flex-end",
-  },
-  selfPct: {
+    color: "#F4F7FF",
     fontSize: 32,
-    fontWeight: "800",
-    color: Colors.light.tint,
-    lineHeight: 36,
+    fontFamily: "OutfitBlack",
   },
-  selfStatLabel: {
-    fontSize: 11,
-    color: "#3A4870",
-    fontWeight: "600",
-  },
-  progressTrack: {
-    height: 5,
-    backgroundColor: "#111828",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: Colors.light.tint,
-    borderRadius: 3,
-  },
-  selfRank: {
-    fontSize: 12,
-    color: "#3A4870",
-    fontWeight: "600",
-  },
-  card: {
-    backgroundColor: "#0C1120",
-    borderRadius: 22,
-    padding: 20,
-    gap: 12,
+  heroCard: {
+    marginTop: 6,
+    backgroundColor: "#0D1220",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#1A2238",
+    borderColor: "#1D2640",
+    padding: 16,
+    gap: 4,
   },
-  cardTitleRow: {
+  heroTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 2,
-  },
-  cardLabel: {
-    fontSize: 10,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: Colors.light.muted,
-    fontWeight: "700",
-  },
-  emptyState: {
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 13,
-    color: "#2A3560",
-    textAlign: "center",
-    fontWeight: "500",
-  },
-  rankRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#080B14",
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: "#141C2E",
-  },
-  rankRowSelf: {
-    borderColor: `${Colors.light.tint}30`,
-    backgroundColor: "#0A1020",
-  },
-  rankLeft: {
-    width: 22,
-    alignItems: "center",
-  },
-  rankNum: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#3A4060",
-  },
-  rankAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#111828",
-    borderWidth: 1,
-    borderColor: "#1A2238",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rankAvatarText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: Colors.light.muted,
-  },
-  rankInfo: {
-    flex: 1,
     gap: 6,
   },
-  rankNameRow: {
+  heroLabel: {
+    color: "#A3AFCC",
+    fontSize: 12,
+    fontFamily: "OutfitSemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  heroName: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontFamily: "OutfitExtraBold",
+  },
+  heroXp: {
+    color: "#E8C76D",
+    fontSize: 16,
+    fontFamily: "OutfitBold",
+  },
+  listContent: {
+    paddingHorizontal: 22,
+    paddingTop: 16,
+    paddingBottom: 30,
+    gap: 10,
+  },
+  row: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "#0B0F1A",
+    borderWidth: 1,
+    borderColor: "#1A2238",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  rankName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.text,
+  rankPill: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#253154",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#101625",
   },
-  rankNameSelf: {
-    color: Colors.light.tint,
-    fontWeight: "800",
+  rankText: {
+    color: "#90A0C8",
+    fontSize: 12,
+    fontFamily: "OutfitBold",
   },
-  rankPct: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.light.muted,
+  nameBlock: {
+    flex: 1,
+    marginLeft: 12,
   },
-  rankPctSelf: {
-    color: Colors.light.tint,
+  name: {
+    color: "#F5F8FF",
+    fontSize: 17,
+    fontFamily: "OutfitSemiBold",
   },
-  rankBarTrack: {
-    height: 3,
-    backgroundColor: "#111828",
-    borderRadius: 2,
-    overflow: "hidden",
+  subtitle: {
+    color: "#6F7EA7",
+    fontSize: 12,
+    fontFamily: "Outfit",
+    marginTop: 2,
   },
-  rankBarFill: {
-    height: "100%",
-    borderRadius: 2,
+  xpBlock: {
+    alignItems: "flex-end",
+    marginLeft: 8,
+  },
+  xpValue: {
+    color: "#B7C5F0",
+    fontSize: 17,
+    fontFamily: "OutfitExtraBold",
+  },
+  xpLabel: {
+    color: "#5A6891",
+    fontSize: 11,
+    fontFamily: "OutfitBold",
+    letterSpacing: 0.8,
   },
 });
