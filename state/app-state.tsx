@@ -244,7 +244,7 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
   const setPro = useCallback(
     (value: boolean) => {
       console.log("[state] Set isPro:", value);
-      updateState((current) => ({ ...current, isPro: value }));
+      updateState((current) => (current.isPro === value ? current : { ...current, isPro: value }));
     },
     [updateState]
   );

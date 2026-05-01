@@ -23,7 +23,10 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.arcstep.skilltree",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "com.android.vending.BILLING"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"

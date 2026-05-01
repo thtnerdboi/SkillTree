@@ -7,6 +7,7 @@ import { StripeProvider } from "@stripe/stripe-react-native";
 
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AppStateProvider } from "../state/app-state";
+import { RevenueCatProvider } from "../lib/revenuecat";
 import { trpc, trpcClient } from "../lib/trpc";
 
 SplashScreen.preventAutoHideAsync();
@@ -36,11 +37,13 @@ export default function RootLayout() {
           merchantIdentifier="merchant.com.arcstep.skilltree"
         >
           <AppStateProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <ErrorBoundary>
-                <RootLayoutNav />
-              </ErrorBoundary>
-            </GestureHandlerRootView>
+            <RevenueCatProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <ErrorBoundary>
+                  <RootLayoutNav />
+                </ErrorBoundary>
+              </GestureHandlerRootView>
+            </RevenueCatProvider>
           </AppStateProvider>
         </StripeProvider>
       </trpc.Provider>

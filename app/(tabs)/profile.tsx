@@ -37,6 +37,7 @@ import {
 import { useAppState } from "../../state/app-state";
 import { AdBanner } from "../../components/AdBanner";
 import { ProUpgradeModal } from "../../components/ProUpgradeModal";
+import { useRevenueCat } from "../../lib/revenuecat";
 
 export default function ProfileScreen() {
   const {
@@ -57,6 +58,7 @@ export default function ProfileScreen() {
   const [nameInput, setNameInput] = useState<string>(state.displayName);
   const [adWatchCooldown, setAdWatchCooldown] = useState<boolean>(false);
   const [proModalVisible, setProModalVisible] = useState<boolean>(false);
+  const { openCustomerCenter, isCustomerCenterSupported } = useRevenueCat();
 
   const xpCurrent = getXpForCurrentLevel(userLevel);
   const xpNext = getXpForNextLevel(userLevel);
@@ -313,9 +315,19 @@ export default function ProfileScreen() {
                 <Text style={styles.proActiveTitle}>Pro Active</Text>
                 <Text style={styles.proActiveSub}>Enjoying 1.5× XP & no ads</Text>
               </View>
-              <View style={styles.proBadgeGold}>
-                <Text style={styles.proBadgeGoldText}>PRO</Text>
-              </View>
+              {isCustomerCenterSupported ? (
+                <TouchableOpacity
+                  style={styles.manageProBtn}
+                  onPress={openCustomerCenter}
+                  testID="manage-pro"
+                >
+                  <Text style={styles.manageProText}>Manage</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.proBadgeGold}>
+                  <Text style={styles.proBadgeGoldText}>PRO</Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -465,4 +477,6 @@ const styles = StyleSheet.create({
   proActiveSub: { fontFamily: "OutfitSemiBold", fontSize: 12, color: Colors.light.muted, marginTop: 1 },
   proBadgeGold: { backgroundColor: "#FFD700", borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4 },
   proBadgeGoldText: { fontFamily: "OutfitBlack", fontSize: 10, color: "#060810", letterSpacing: 1 },
+  manageProBtn: { backgroundColor: "#FFD700", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  manageProText: { fontFamily: "OutfitBlack", fontSize: 11, color: "#060810", letterSpacing: 0.5 },
 });
