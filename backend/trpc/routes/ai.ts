@@ -1,6 +1,8 @@
-import { publicProcedure, createTRPCRouter } from "../create-context";
-import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
+
+import { publicProcedure, createTRPCRouter } from "../create-context";
 
 const NODE_IDS = [
   "calm",
@@ -32,6 +34,16 @@ const NODE_IDS = [
   "legacy",
 ] as const;
 
+const AI_GENERATION_RATE_LIMIT = 20;
+const AI_GENERATION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+type RateLimitEntry = {
+  count: number;
+  windowStart: number;
+};
+
+const aiGenerationRateLimits = new Map<string, RateLimitEntry>();
+
 const challengeSchema = z.object({
   title: z.string().min(1).max(60),
   detail: z.string().min(1).max(120),
@@ -56,6 +68,53 @@ const extractJsonObject = (text: string) => {
   return withoutCodeFences.slice(firstBrace, lastBrace + 1);
 };
 
+const getRateLimitKey = (req: Request, userId: string | null) => {
+  if (userId) {
+    return `user:${userId}`;
+  }
+
+  const forwardedFor = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = req.headers.get("x-real-ip")?.trim();
+  const ipAddress = forwardedFor || realIp || "unknown";
+
+  return `anonymous:${ipAddress}`;
+};
+
+const removeExpiredRateLimitEntries = (now: number) => {
+  for (const [key, entry] of aiGenerationRateLimits.entries()) {
+    if (now - entry.windowStart >= AI_GENERATION_RATE_LIMIT_WINDOW_MS) {
+      aiGenerationRateLimits.delete(key);
+    }
+  }
+};
+
+const enforceAiGenerationRateLimit = (rateLimitKey: string) => {
+  const now = Date.now();
+  removeExpiredRateLimitEntries(now);
+
+  const existing = aiGenerationRateLimits.get(rateLimitKey);
+  const entry =
+    existing && now - existing.windowStart < AI_GENERATION_RATE_LIMIT_WINDOW_MS
+      ? existing
+      : { count: 0, windowStart: now };
+
+  if (entry.count >= AI_GENERATION_RATE_LIMIT) {
+    const retryAfterMs = Math.max(
+      entry.windowStart + AI_GENERATION_RATE_LIMIT_WINDOW_MS - now,
+      0
+    );
+    const retryAfterMinutes = Math.max(1, Math.ceil(retryAfterMs / 60_000));
+
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `You've reached the Pro AI generation limit of ${AI_GENERATION_RATE_LIMIT} per hour. Please try again in about ${retryAfterMinutes} minute${retryAfterMinutes === 1 ? "" : "s"}.`,
+    });
+  }
+
+  entry.count += 1;
+  aiGenerationRateLimits.set(rateLimitKey, entry);
+};
+
 export const aiRouter = createTRPCRouter({
   generateTree: publicProcedure
     .input(
@@ -65,10 +124,15 @@ export const aiRouter = createTRPCRouter({
         craft: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      enforceAiGenerationRateLimit(getRateLimitKey(ctx.req, ctx.userId));
+
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {
-        throw new Error("GEMINI_API_KEY is missing from backend environment variables.");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "GEMINI_API_KEY is missing from backend environment variables.",
+        });
       }
 
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -108,8 +172,15 @@ export const aiRouter = createTRPCRouter({
         const parsed = JSON.parse(jsonText);
         return aiTreeSchema.parse(parsed);
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
         console.error("Gemini AI Error:", error);
-        throw new Error("Failed to generate challenges from AI.");
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to generate challenges from AI.",
+        });
       }
     }),
 });
