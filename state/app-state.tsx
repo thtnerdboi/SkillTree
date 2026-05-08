@@ -52,6 +52,7 @@ export type StoredState = {
   lastResetAt: number;
   isPro: boolean;
   aiGenerations: number;
+  lastAiGenTime: Record<string, number>;
 };
 
 const STORAGE_KEY = "skilltree-state-v1";
@@ -72,6 +73,7 @@ const createDefaultState = (): StoredState => ({
   lastResetAt: Date.now(),
   isPro: false,
   aiGenerations: 0,
+  lastAiGenTime: {},
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
@@ -342,13 +344,22 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     [updateState]
   );
 
-  const recordAiGeneration = useCallback(() => {
-    console.log("[state] AI generation recorded");
-    updateState((current) => ({
-      ...current,
-      aiGenerations: current.aiGenerations + 1,
-    }));
-  }, [updateState]);
+  const recordAiGeneration = useCallback(
+    (domainId?: string) => {
+      console.log("[state] AI generation recorded");
+      updateState((current) => ({
+        ...current,
+        aiGenerations: current.aiGenerations + 1,
+        lastAiGenTime: domainId
+          ? {
+              ...current.lastAiGenTime,
+              [domainId]: Date.now(),
+            }
+          : current.lastAiGenTime,
+      }));
+    },
+    [updateState]
+  );
 
   const addFriend = useCallback(
     (code: string, name: string, weeklyCompletion: number) => {

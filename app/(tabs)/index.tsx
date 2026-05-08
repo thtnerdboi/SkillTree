@@ -442,8 +442,15 @@ export default function TreeScreen() {
 
         const allGenerated: Record<string, Challenge[]> = {};
         SKILL_NODES.forEach((node) => {
-          if (generatedNodes && generatedNodes[node.id]) {
-            allGenerated[node.id] = generatedNodes[node.id];
+          const generatedChallenges = generatedNodes?.[node.id as keyof typeof generatedNodes];
+          if (generatedChallenges) {
+            allGenerated[node.id] = generatedChallenges.map((challenge, index) => ({
+              id: `ai-${node.id}-${index}-${Date.now()}`,
+              nodeId: node.id,
+              title: challenge.title,
+              detail: challenge.detail,
+              xp: challenge.xp,
+            }));
           } else {
             allGenerated[node.id] = node.defaultChallenges;
           }

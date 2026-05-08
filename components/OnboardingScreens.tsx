@@ -108,11 +108,11 @@ export function OnboardingScreens({ onComplete, isGenerating, generateError }: P
             <StepDots active={0} />
             <View style={styles.authHero}>
               <Text style={styles.brand}>ARCSTEP</Text>
-              <Text style={styles.authTitle}>Let's build{"\n"}your tree.</Text>
+              <Text style={styles.authTitle}>{"Let's build"}{"\n"}your tree.</Text>
               <Text style={styles.authSub}>Answer 3 quick questions and AI will generate a personalized challenge tree just for you.</Text>
             </View>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep(1)}>
-              <Text style={styles.primaryBtnText}>Let's Go</Text>
+              <Text style={styles.primaryBtnText}>{"Let's Go"}</Text>
               <ChevronRight size={18} color="#060810" strokeWidth={2.5} />
             </TouchableOpacity>
           </ScrollView>

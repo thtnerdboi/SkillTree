@@ -32,7 +32,6 @@ export const socialRouter = createTRPCRouter({
         name: input.name,
         inviteCode: input.inviteCode,
         weeklyCompletion: input.weeklyCompletion,
-        updatedAt: Math.floor(Date.now() / 1000),
         isPro,
         stripeCustomerId
       });
@@ -59,7 +58,7 @@ export const socialRouter = createTRPCRouter({
       if (areFriends) return { status: "already_friends" } as const;
       
       const requests = await storeApi.listFriendRequests(toUser.id);
-      const existing = requests.find((r) => r.fromUserId === input.fromUserId);
+      const existing = requests.find((r) => r.userId === input.fromUserId);
       if (existing) return { status: "already_pending" } as const;
       
       const request = await storeApi.addFriendRequest(input.fromUserId, toUser.id);
@@ -73,10 +72,10 @@ export const socialRouter = createTRPCRouter({
       const requests = await storeApi.listFriendRequests(input.userId);
       return await Promise.all(
         requests.map(async (request) => {
-          const fromUser = await storeApi.getUser(request.fromUserId);
+          const fromUser = request.userId ? await storeApi.getUser(request.userId) : null;
           return {
             id: request.id,
-            fromUserId: request.fromUserId,
+            fromUserId: request.userId ?? "",
             fromName: fromUser?.name ?? "Unknown",
             fromInviteCode: fromUser?.inviteCode ?? "",
             createdAt: request.createdAt,
@@ -90,10 +89,14 @@ export const socialRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       if (ctx.userId !== input.userId) throw new TRPCError({ code: "FORBIDDEN" });
       const requests = await storeApi.listFriendRequests(input.userId);
-      const request = requests.find((item) => item.id === input.requestId);
+      const request = requests.find((item) => `${item.id}` === input.requestId);
       if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Request not found." });
       
-      await storeApi.addFriendship(request.fromUserId, request.toUserId);
+      if (!request.userId || !request.friendId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Request is missing friend details." });
+      }
+
+      await storeApi.addFriendship(request.userId, request.friendId);
       await storeApi.removeFriendRequest(request.id);
       return { status: "accepted" } as const;
     }),
@@ -113,7 +116,7 @@ export const socialRouter = createTRPCRouter({
           userId: user.id,
           name: user.name,
           inviteCode: user.inviteCode,
-          weeklyCompletion: user.weeklyCompletion,
+          weeklyCompletion: user.weeklyCompletion ?? 0,
           isPro: user.isPro,
         }))
         .sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
