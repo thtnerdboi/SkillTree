@@ -198,7 +198,7 @@ export default function FriendsScreen() {
                     style={styles.acceptBtn}
                     onPress={() => {
                       acceptRequest.mutate(
-                        { userId: state.userId, requestId: request.id },
+                        { userId: state.userId, requestId: `${request.id}` },
                         { 
                           onSuccess: () => {
                             // BUG 9 FIX: Refetch BOTH requests and circle instantly 
