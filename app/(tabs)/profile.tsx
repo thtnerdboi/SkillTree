@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -9,6 +11,23 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  AdEventType,
+  RewardedAd,
+  RewardedAdEventType,
+  TestIds,
+} from "react-native-google-mobile-ads";
+
+// TODO: Create rewarded ad units in your AdMob dashboard and replace these placeholder
+// unit IDs. Keep the TestIds branches for __DEV__ so the emulator always uses test ads.
+const REWARDED_UNIT_ID = Platform.select({
+  android: __DEV__
+    ? TestIds.REWARDED
+    : "ca-app-pub-5851180331769845/REPLACE_ANDROID_REWARDED_UNIT",
+  ios: __DEV__
+    ? TestIds.REWARDED
+    : "ca-app-pub-5851180331769845/REPLACE_IOS_REWARDED_UNIT",
+})!;
 import {
   Award,
   CheckCircle,
@@ -57,8 +76,75 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState<boolean>(false);
   const [nameInput, setNameInput] = useState<string>(state.displayName);
   const [adWatchCooldown, setAdWatchCooldown] = useState<boolean>(false);
+  const [adLoaded, setAdLoaded] = useState<boolean>(false);
   const [proModalVisible, setProModalVisible] = useState<boolean>(false);
   const { openCustomerCenter, isCustomerCenterSupported } = useRevenueCat();
+
+  // Rewarded ad — preloaded on mount so it's ready when the user taps.
+  // Each RewardedAd instance can only be shown once; after dismiss we create a new one.
+  const rewardedAdRef = useRef<RewardedAd | null>(null);
+  const addBonusXpRef = useRef(addBonusXp);
+  useEffect(() => { addBonusXpRef.current = addBonusXp; }, [addBonusXp]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAd = () => {
+      if (!isMounted) return;
+      setAdLoaded(false);
+
+      const ad = RewardedAd.createForAdRequest(REWARDED_UNIT_ID, {
+        requestNonPersonalizedAdsOnly: true,
+      });
+
+      const unsubLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+        if (!isMounted) return;
+        rewardedAdRef.current = ad;
+        setAdLoaded(true);
+      });
+
+      const unsubEarned = ad.addAdEventListener(
+        RewardedAdEventType.EARNED_REWARD,
+        () => {
+          addBonusXpRef.current(100);
+          setAdWatchCooldown(true);
+          setTimeout(() => {
+            if (isMounted) setAdWatchCooldown(false);
+          }, 60_000);
+        }
+      );
+
+      const unsubClosed = ad.addAdEventListener(AdEventType.CLOSED, () => {
+        unsubLoaded();
+        unsubEarned();
+        unsubClosed();
+        unsubError();
+        rewardedAdRef.current = null;
+        setAdLoaded(false);
+        loadAd(); // preload next one immediately
+      });
+
+      const unsubError = ad.addAdEventListener(AdEventType.ERROR, (error) => {
+        console.warn("[RewardedAd] Load error:", error.message);
+        unsubLoaded();
+        unsubEarned();
+        unsubClosed();
+        unsubError();
+        rewardedAdRef.current = null;
+        if (isMounted) setAdLoaded(false);
+        setTimeout(loadAd, 30_000); // retry after 30 s
+      });
+
+      ad.load();
+    };
+
+    loadAd();
+
+    return () => {
+      isMounted = false;
+      rewardedAdRef.current = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const xpCurrent = getXpForCurrentLevel(userLevel);
   const xpNext = getXpForNextLevel(userLevel);
@@ -74,10 +160,14 @@ export default function ProfileScreen() {
 
   const handleWatchAd = () => {
     if (adWatchCooldown) return;
-    console.log("[profile] Watch ad for bonus XP");
-    addBonusXp(100);
-    setAdWatchCooldown(true);
-    setTimeout(() => setAdWatchCooldown(false), 60000);
+    if (!adLoaded || !rewardedAdRef.current) {
+      Alert.alert("Ad Loading", "The ad is still loading. Please try again in a moment.");
+      return;
+    }
+    rewardedAdRef.current.show().catch((error: Error) => {
+      console.warn("[RewardedAd] Show error:", error.message);
+      Alert.alert("Ad Unavailable", "Couldn't show the ad right now. Please try again later.");
+    });
   };
 
   const avatarLetter = (state.displayName || "A").charAt(0).toUpperCase();
@@ -335,23 +425,47 @@ export default function ProfileScreen() {
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>BONUS XP</Text>
               <TouchableOpacity
-                style={[styles.adRewardBtn, adWatchCooldown && styles.adRewardBtnDisabled]}
+                style={[
+                  styles.adRewardBtn,
+                  (adWatchCooldown || !adLoaded) && styles.adRewardBtnDisabled,
+                ]}
                 onPress={handleWatchAd}
-                disabled={adWatchCooldown}
+                disabled={adWatchCooldown || !adLoaded}
                 testID="watch-ad"
               >
                 <View style={styles.adRewardLeft}>
-                  <Zap size={18} color={adWatchCooldown ? "#2A3560" : Colors.light.tint} strokeWidth={2.5} />
+                  <Zap
+                    size={18}
+                    color={adWatchCooldown || !adLoaded ? "#2A3560" : Colors.light.tint}
+                    strokeWidth={2.5}
+                  />
                   <View>
-                    <Text style={[styles.adRewardTitle, adWatchCooldown && { color: "#2A3560" }]}>
-                      {adWatchCooldown ? "Come back soon" : "Watch ad for +100 XP"}
+                    <Text
+                      style={[
+                        styles.adRewardTitle,
+                        (adWatchCooldown || !adLoaded) && { color: "#2A3560" },
+                      ]}
+                    >
+                      {adWatchCooldown
+                        ? "Come back soon"
+                        : !adLoaded
+                        ? "Ad loading…"
+                        : "Watch ad for +100 XP"}
                     </Text>
                     <Text style={styles.adRewardSub}>
-                      {adWatchCooldown ? "Reward claimed" : "Rewarded ad · 30 seconds"}
+                      {adWatchCooldown
+                        ? "Reward claimed"
+                        : !adLoaded
+                        ? "Preparing your reward"
+                        : "Rewarded ad · 30 seconds"}
                     </Text>
                   </View>
                 </View>
-                <ChevronRight size={16} color={adWatchCooldown ? "#2A3560" : Colors.light.muted} strokeWidth={2.5} />
+                <ChevronRight
+                  size={16}
+                  color={adWatchCooldown || !adLoaded ? "#2A3560" : Colors.light.muted}
+                  strokeWidth={2.5}
+                />
               </TouchableOpacity>
             </View>
           )}

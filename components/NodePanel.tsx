@@ -18,9 +18,7 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { Check, Lock, X, Zap, Sparkles } from "lucide-react-native";
-import { useMutation } from "@tanstack/react-query";
-import { generateObject } from "@rork-ai/toolkit-sdk";
-import { z } from "zod";
+import { trpc } from "@/lib/trpc";
 import Colors from "@/constants/colors";
 import { DOMAIN_COLOR, DOMAIN_LABEL, SKILL_NODES } from "@/mocks/mvp-data";
 import { useAppState } from "@/state/app-state";
@@ -88,36 +86,16 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
     ]).start(() => onClose());
   }, [cardScale, cardTranslate, onClose, overlayOpacity]);
 
-  const regenerateNodeMutation = useMutation({
-    mutationFn: async ({ goal }: { goal: string }) => {
-      const result = await generateObject({
-        messages: [
-          {
-            role: "user",
-            content: `Generate 3 specific daily challenges for "${node.title}". Goal: ${goal}. Description: ${node.description}`,
-          },
-        ],
-        schema: z.object({
-          challenges: z.array(
-            z.object({
-              title: z.string(),
-              detail: z.string(),
-            })
-          ).length(3),
-        }),
-      });
-
-      const xpValues = node.defaultChallenges.map((c) => c.xp);
-      return result.challenges.map((c, i) => ({
+  const regenerateNodeMutation = trpc.ai.regenerateNode.useMutation({
+    onSuccess: (challenges) => {
+      const withIds = challenges.map((c, i) => ({
         id: `ai-${node.id}-${i}-${Date.now()}`,
         nodeId: node.id,
         title: c.title,
         detail: c.detail,
-        xp: xpValues[i] ?? 30,
+        xp: c.xp,
       }));
-    },
-    onSuccess: (challenges) => {
-      setAiChallenges(node.id, challenges);
+      setAiChallenges(node.id, withIds);
       setGoalInput("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
@@ -145,7 +123,14 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
 
     if (goalInput.trim().length > 8 && !regenerateNodeMutation.isPending) {
       recordAiGeneration(node.domainId);
-      regenerateNodeMutation.mutate({ goal: goalInput.trim() });
+      const xpValues = node.defaultChallenges.map((c) => c.xp) as [number, number, number];
+      regenerateNodeMutation.mutate({
+        nodeId: node.id,
+        nodeTitle: node.title,
+        nodeDescription: node.description,
+        goal: goalInput.trim(),
+        xpValues,
+      });
     }
   };
 

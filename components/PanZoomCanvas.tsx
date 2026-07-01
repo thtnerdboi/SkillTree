@@ -33,10 +33,12 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
     canvasHeight,
     viewportWidth,
     viewportHeight,
+    minScale = 0.5,
+    maxScale = 2.0,
   }, ref) => {
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
-    const scale = useSharedValue(1); // Locked to 1
+    const scale = useSharedValue(1);
     const savedTranslateX = useSharedValue(0);
     const savedTranslateY = useSharedValue(0);
 
@@ -95,8 +97,49 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         cancelAnimation(translateY);
         centerOnPoint(x, y, animated);
       },
-      zoomBy: () => {
-        // Feature disabled to maintain premium feel, keeping function signature to prevent index.tsx crashes
+
+      zoomBy: (delta: number, animated = true) => {
+        cancelAnimation(scale);
+        cancelAnimation(translateX);
+        cancelAnimation(translateY);
+
+        const currentScale = scale.value;
+        const newScale = Math.min(Math.max(currentScale + delta, minScale), maxScale);
+        if (newScale === currentScale) return;
+
+        // Keep the canvas-Y coordinate that's currently at the viewport centre stable.
+        const canvasCenterY = (viewportHeight / 2 - translateY.value) / currentScale;
+        let targetY = viewportHeight / 2 - canvasCenterY * newScale;
+
+        // X: keep canvas horizontally centred at the new scale.
+        let targetX = (viewportWidth - canvasWidth * newScale) / 2;
+
+        // Clamp to valid bounds.
+        const scaledWidth = canvasWidth * newScale;
+        const scaledHeight = canvasHeight * newScale;
+        const minXBound = Math.min(0, viewportWidth - scaledWidth);
+        const maxXBound = scaledWidth <= viewportWidth ? (viewportWidth - scaledWidth) / 2 : 0;
+        const minYBound = Math.min(0, viewportHeight - scaledHeight);
+        const maxYBound = scaledHeight <= viewportHeight ? (viewportHeight - scaledHeight) / 2 : 0;
+
+        targetX = Math.min(Math.max(targetX, minXBound), maxXBound);
+        targetY = Math.min(Math.max(targetY, minYBound), maxYBound);
+
+        const timingConfig = { duration: 280, easing: Easing.out(Easing.cubic) };
+
+        if (animated) {
+          scale.value = withTiming(newScale, timingConfig);
+          translateX.value = withTiming(targetX, timingConfig);
+          translateY.value = withTiming(targetY, timingConfig);
+        } else {
+          scale.value = newScale;
+          translateX.value = targetX;
+          translateY.value = targetY;
+        }
+
+        // Update saved values so the next pan gesture starts from the right position.
+        savedTranslateX.value = targetX;
+        savedTranslateY.value = targetY;
       },
     }));
 
@@ -111,18 +154,17 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
-        // Lock X axis translation, only allow Y axis scrolling
-        const nextX = savedTranslateX.value; 
+        // Lock X axis — the tree is always horizontally centred.
+        const nextX = savedTranslateX.value;
         const nextY = savedTranslateY.value + e.translationY;
-        
+
         const clamped = clampTranslate(nextX, nextY, scale.value);
         translateX.value = clamped.x;
         translateY.value = clamped.y;
       })
       .onEnd((e) => {
         const bounds = getBounds(scale.value);
-        
-        // Only decay the Y axis
+
         translateY.value = withDecay({
           velocity: e.velocityY,
           deceleration: 0.994,

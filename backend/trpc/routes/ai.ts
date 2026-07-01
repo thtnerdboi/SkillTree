@@ -115,7 +115,81 @@ const enforceAiGenerationRateLimit = (rateLimitKey: string) => {
   aiGenerationRateLimits.set(rateLimitKey, entry);
 };
 
+const nodeChallengeSingleSchema = z.object({
+  title: z.string().min(1).max(60),
+  detail: z.string().min(1).max(120),
+});
+
 export const aiRouter = createTRPCRouter({
+  regenerateNode: publicProcedure
+    .input(
+      z.object({
+        nodeId: z.string(),
+        nodeTitle: z.string().max(60),
+        nodeDescription: z.string().max(200),
+        goal: z.string().max(200),
+        xpValues: z.tuple([
+          z.number().int().min(1).max(500),
+          z.number().int().min(1).max(500),
+          z.number().int().min(1).max(500),
+        ]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      enforceAiGenerationRateLimit(getRateLimitKey(ctx.req, ctx.userId));
+
+      const apiKey = process.env.GEMINI_API_KEY || "";
+      if (!apiKey) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "GEMINI_API_KEY is missing from backend environment variables.",
+        });
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({
+        model: "gemini-1.5-flash",
+        generationConfig: { responseMimeType: "application/json" },
+      });
+
+      const prompt = `
+        You are an expert gamified habit tracker and RPG skill tree designer.
+        Generate exactly 3 personalised micro-challenges for the skill node "${input.nodeTitle}".
+        Node description: ${input.nodeDescription}
+        User's personal goal: ${input.goal}
+
+        Rules:
+        - Titles: under 4 words, written like RPG quest names
+        - Details: under 12 words, specific and directly tied to the user's goal
+        - Each challenge must feel meaningfully different from the others
+
+        Respond ONLY with a valid JSON object, no markdown:
+        { "challenges": [{ "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }] }
+      `;
+
+      try {
+        const result = await model.generateContent(prompt);
+        const rawText = result.response.text();
+        const jsonText = extractJsonObject(rawText);
+        const parsed = JSON.parse(jsonText);
+
+        const challenges = z.array(nodeChallengeSingleSchema).length(3).parse(parsed.challenges);
+
+        return challenges.map((c, i) => ({
+          title: c.title,
+          detail: c.detail,
+          xp: input.xpValues[i],
+        }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("Gemini regenerateNode error:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to generate personalised challenges.",
+        });
+      }
+    }),
+
   generateTree: publicProcedure
     .input(
       z.object({

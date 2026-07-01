@@ -47,7 +47,8 @@
           "iosAppId": "ca-app-pub-5851180331769845~2890404402"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
