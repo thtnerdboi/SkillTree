@@ -21,9 +21,21 @@ Users can upgrade to the Pro tier to supercharge their growth:
 ## 🛠️ Tech Stack
 - React Native & Expo
 - Stripe React Native SDK (Payments)
+- RevenueCat (Subscriptions)
 - Google Mobile Ads (Monetization)
 - Google Gemini API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
+
+## RevenueCat configuration
+
+RevenueCat does not use fallback test values. Configure these Expo public environment variables before running native builds, and especially before production builds:
+
+- `EXPO_PUBLIC_REVENUECAT_API_KEY`
+- `EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID`
+- `EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID`
+- `EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID`
+
+Development builds show a warning if any value is missing. Production native builds fail loudly on startup when required RevenueCat config is absent.
 
 ## 🧪 API Smoke Testing (No emulator required)
 

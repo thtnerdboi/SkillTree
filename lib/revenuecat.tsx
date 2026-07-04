@@ -10,17 +10,14 @@ import Purchases, {
 } from "react-native-purchases";
 import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 
+import { revenueCatConfig } from "./runtime-config";
 import { useAppState } from "../state/app-state";
 
-export const REVENUECAT_API_KEY =
-  process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? "test_gUCxzOBClgZHJiwRceRSkJZaFkr";
-export const REVENUECAT_ENTITLEMENT_ID =
-  process.env.EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID ?? "arcstep_skilltree_pro";
+export const REVENUECAT_API_KEY = revenueCatConfig.apiKey;
+export const REVENUECAT_ENTITLEMENT_ID = revenueCatConfig.entitlementId;
 export const REVENUECAT_PRO_DISPLAY_NAME = "ArcStep's SkillTree Pro";
-export const REVENUECAT_MONTHLY_PRODUCT_ID =
-  process.env.EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID ?? "monthly";
-export const REVENUECAT_YEARLY_PRODUCT_ID =
-  process.env.EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID ?? "yearly";
+export const REVENUECAT_MONTHLY_PRODUCT_ID = revenueCatConfig.monthlyProductId;
+export const REVENUECAT_YEARLY_PRODUCT_ID = revenueCatConfig.yearlyProductId;
 
 const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
 
@@ -107,6 +104,12 @@ export const [RevenueCatProvider, useRevenueCat] = createContextHook(() => {
     if (!isNativeMobile) {
       setIsLoading(false);
       setError("RevenueCat purchases are only available in native iOS and Android builds.");
+      return;
+    }
+
+    if (!revenueCatConfig.isComplete) {
+      setIsLoading(false);
+      setError(revenueCatConfig.errorMessage);
       return;
     }
 
