@@ -20,15 +20,15 @@ Users can upgrade to the Pro tier to supercharge their growth:
 
 ## 🛠️ Tech Stack
 - React Native & Expo
-- Stripe React Native SDK (Payments)
-- RevenueCat (Subscriptions)
+- RevenueCat (V1 mobile subscriptions)
+- Stripe server SDK (backend routes only)
 - Google Mobile Ads (Monetization)
 - Google Gemini API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
 
 ## RevenueCat configuration
 
-RevenueCat does not use fallback test values. Configure these Expo public environment variables before running native builds, and especially before production builds:
+RevenueCat is the V1 mobile subscription system for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing; Stripe is not used in the mobile Pro upgrade flow. Configure these Expo public environment variables before running native builds, and especially before production builds:
 
 - `EXPO_PUBLIC_REVENUECAT_API_KEY`
 - `EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID`

@@ -34,13 +34,6 @@
     "plugins": [
       "expo-router",
       [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.arcstep.skilltree",
-          "enableGooglePay": true
-        }
-      ],
-      [
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-5851180331769845~8736324119",
