@@ -28,12 +28,45 @@ Users can upgrade to the Pro tier to supercharge their growth:
 
 ## RevenueCat configuration
 
-RevenueCat is the V1 mobile subscription system for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing; Stripe is not used in the mobile Pro upgrade flow. Configure these Expo public environment variables before running native builds, and especially before production builds:
+RevenueCat is the V1 mobile subscription system for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing; Stripe is not used in the mobile Pro upgrade flow.
+
+Production builds must receive RevenueCat configuration from EAS environment variables, not from hardcoded values in source code, `eas.json`, or committed `.env` files. These values are `EXPO_PUBLIC_*` Expo variables, so they are bundled into the native app and should be treated as publishable client configuration. Use EAS environment variable visibility such as `sensitive` to avoid casual exposure in dashboards and logs, but do not rely on these values as server-only secrets.
+
+Required variables:
 
 - `EXPO_PUBLIC_REVENUECAT_API_KEY`
 - `EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID`
 - `EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID`
 - `EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID`
+
+Set the production values in EAS with placeholder-safe commands like:
+
+```bash
+eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_API_KEY --value "REPLACE_WITH_REVENUECAT_PUBLIC_API_KEY"
+eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID --value "pro"
+eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID --value "com.example.skilltree.pro.monthly"
+eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID --value "com.example.skilltree.pro.yearly"
+```
+
+Use the real RevenueCat public app API key, entitlement identifier, and App Store / Google Play product identifiers from the RevenueCat dashboard when running the commands. Do not commit real production values to this repository.
+
+Production EAS builds should use the EAS `production` environment so these variables are available during the native build:
+
+```json
+{
+  "build": {
+    "production": {
+      "environment": "production"
+    }
+  }
+}
+```
+
+Build production releases with:
+
+```bash
+eas build --profile production
+```
 
 Development builds show a warning if any value is missing. Production native builds fail loudly on startup when required RevenueCat config is absent.
 
