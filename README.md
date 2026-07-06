@@ -21,14 +21,13 @@ Users can upgrade to the Pro tier to supercharge their growth:
 ## 🛠️ Tech Stack
 - React Native & Expo
 - RevenueCat (V1 mobile subscriptions)
-- Stripe server SDK (backend routes only)
 - Google Mobile Ads (Monetization)
 - Google Gemini API (Dynamic Challenge Generation)
 - AsyncStorage (Local Data Persistence)
 
 ## RevenueCat configuration
 
-RevenueCat is the V1 mobile subscription system for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing; Stripe is not used in the mobile Pro upgrade flow.
+RevenueCat is the only V1 billing path for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing.
 
 Production builds must receive RevenueCat configuration from EAS environment variables, not from hardcoded values in source code, `eas.json`, or committed `.env` files. These values are `EXPO_PUBLIC_*` Expo variables, so they are bundled into the native app and should be treated as publishable client configuration. Use EAS environment variable visibility such as `sensitive` to avoid casual exposure in dashboards and logs, but do not rely on these values as server-only secrets.
 
@@ -72,7 +71,7 @@ Development builds show a warning if any value is missing. Production native bui
 
 ## 🧪 API Smoke Testing (No emulator required)
 
-You can validate the backend tRPC + Gemini/Stripe flows directly from your laptop:
+You can validate the backend tRPC and optional Gemini flows directly from your laptop:
 
 ```bash
 # 1) Run backend in one terminal
@@ -86,16 +85,12 @@ Optional flags:
 
 - `API_BASE_URL=http://localhost:3000` (defaults to localhost)
 - `RUN_GEMINI_TEST=1` to include the Gemini generation call
-- `TEST_USER_ID=my-user-id` to reuse one user for Stripe tests
 
 ## ☁️ Render deployment checklist
 
 This backend can run on Render, but these env vars must be configured:
 
 - `DATABASE_URL` (required)
-- `STRIPE_SECRET_KEY` (required for Stripe routes)
-- `STRIPE_MONTHLY_PRICE_ID` (required for subscription intent)
-- `STRIPE_WEBHOOK_SECRET` (required for webhook signature verification)
 - `GEMINI_API_KEY` (required for `ai.generateTree`)
 
 Recommended Render start command:

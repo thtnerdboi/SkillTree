@@ -25,15 +25,13 @@ export const socialRouter = createTRPCRouter({
       
       const existing = await storeApi.getUser(input.userId);
       const isPro = existing ? existing.isPro : false;
-      const stripeCustomerId = existing ? existing.stripeCustomerId : null;
 
       return await storeApi.upsertUser({
         id: input.userId,
         name: input.name,
         inviteCode: input.inviteCode,
         weeklyCompletion: input.weeklyCompletion,
-        isPro,
-        stripeCustomerId
+        isPro
       });
     }),
 
@@ -120,114 +118,6 @@ export const socialRouter = createTRPCRouter({
           isPro: user.isPro,
         }))
         .sort((a, b) => b.weeklyCompletion - a.weeklyCompletion);
-    }),
-
-  createSubscriptionIntent: protectedProcedure
-    .input(z.object({ userId: z.string().min(1) }))
-    .mutation(async ({ input, ctx }) => {
-      if (ctx.userId !== input.userId) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "You can only subscribe as yourself." });
-      }
-
-      const stripeSecret = process.env.STRIPE_SECRET_KEY;
-      const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
-
-      if (!stripeSecret || !priceId) {
-        console.warn("⚠️ Stripe key or Price ID missing — returning mock client secret");
-        return {
-          clientSecret: `pi_mock_${Date.now()}_secret_${Math.random().toString(36).slice(2)}`,
-          ephemeralKey: 'mock_ephemeral_key',
-          customer: 'mock_customer_id',
-        };
-      }
-
-      console.log("[social] Processing Stripe intent for user:", input.userId);
-
-      const postStripeForm = async <T = any>(
-        path: string,
-        body: URLSearchParams,
-        extraHeaders?: Record<string, string>
-      ): Promise<T> => {
-        const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${stripeSecret}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-            ...(extraHeaders ?? {}),
-          },
-          body: body.toString(),
-        });
-
-        const data = await res.json();
-        if (!res.ok || data?.error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: data?.error?.message ?? `Stripe request failed for ${path}.`,
-          });
-        }
-        return data as T;
-      };
-
-      const user = await storeApi.getUser(input.userId);
-      if (!user) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "User must exist in database to create a subscription." });
-      }
-
-      let customerId = user.stripeCustomerId;
-
-      if (!customerId) {
-        console.log("[social] Creating new Stripe Customer...");
-        const customerData = await postStripeForm<{ id: string }>(
-          "customers",
-          new URLSearchParams({
-            "metadata[userId]": input.userId,
-            description: `SkillTree user ${input.userId}`,
-          })
-        );
-        
-        customerId = customerData.id;
-
-        await storeApi.upsertUser({
-          ...user,
-          stripeCustomerId: customerId,
-        });
-      }
-
-      const ephemeralData = await postStripeForm<{ secret?: string }>(
-        "ephemeral_keys",
-        new URLSearchParams({
-          customer: customerId as string,
-        }),
-        { "Stripe-Version": "2023-10-16" }
-      );
-
-      const subscription = await postStripeForm<any>(
-        "subscriptions",
-        new URLSearchParams({
-          customer: customerId as string,
-          "items[0][price]": priceId,
-          payment_behavior: "default_incomplete",
-          "expand[]": "latest_invoice.payment_intent",
-        })
-      );
-
-      const clientSecret = subscription?.latest_invoice?.payment_intent?.client_secret;
-      const ephemeralKey = ephemeralData?.secret;
-
-      if (!clientSecret || !ephemeralKey) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Stripe did not return complete payment sheet data.",
-        });
-      }
-
-      console.log("✅ Subscription intent ready");
-      
-      return { 
-        clientSecret,
-        ephemeralKey,
-        customer: customerId 
-      };
     }),
 
   healthCheck: publicProcedure.query(() => ({

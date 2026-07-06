@@ -4,17 +4,14 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 
 import { appRouter } from "./trpc/app-router";
-import { stripeWebhookRouter } from './trpc/routes/stripe-webhook';
 import { createContext } from "./trpc/create-context";
 
 import 'dotenv/config';
 
 const app = new Hono();
 
-// CORS is critical for Stripe/tRPC communication
 app.use("*", cors());
 
-app.route('/api/webhooks/stripe', stripeWebhookRouter);
 
 app.use(
   "/api/trpc/*", 
