@@ -84,10 +84,6 @@ const main = async () => {
     })
   );
 
-  await tryCall("social.createSubscriptionIntent", () =>
-    client.social.createSubscriptionIntent.mutate({ userId })
-  );
-
   if (runGeminiTest) {
     await tryCall("ai.generateTree", async () => {
       const generated = await client.ai.generateTree.mutate({

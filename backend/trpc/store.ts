@@ -29,17 +29,7 @@ export const storeApi = {
     return result[0] ?? null;
   },
 
-  // 2. Find a user specifically by Stripe Customer ID (for webhooks)
-  async findUserByStripeId(stripeId: string) {
-    const result = await db
-      .select()
-      .from(users)
-      .where(eq(users.stripeCustomerId, stripeId))
-      .limit(1);
-    return result[0] ?? null;
-  },
-
-  // 3. The "Super Upsert" - Creates or Updates a user permanently
+  // 2. Creates or updates a user permanently
   async upsertUser(userData: UserInsert & { userId?: string }) {
     const id = userData.userId ?? userData.id;
 
@@ -51,7 +41,6 @@ export const storeApi = {
         inviteCode: userData.inviteCode,
         weeklyCompletion: userData.weeklyCompletion ?? 0,
         isPro: userData.isPro ?? false,
-        stripeCustomerId: userData.stripeCustomerId ?? null,
       })
       .onConflictDoUpdate({
         target: users.id,
@@ -60,7 +49,6 @@ export const storeApi = {
           inviteCode: userData.inviteCode,
           weeklyCompletion: userData.weeklyCompletion ?? 0,
           isPro: userData.isPro ?? false,
-          stripeCustomerId: userData.stripeCustomerId ?? null,
         },
       });
   },
@@ -122,7 +110,7 @@ export const storeApi = {
     await db.delete(friends).where(eq(friends.id, id));
   },
 
-  // 4. Friend Logic (Permanent DB records)
+  // 3. Friend Logic (Permanent DB records)
   async addFriend(userId: string, friendId: string) {
     const existing = await db
       .select()
