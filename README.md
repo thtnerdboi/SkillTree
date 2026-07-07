@@ -67,6 +67,8 @@ Build production releases with:
 eas build --profile production
 ```
 
+Preview APK builds are portable internal builds, not development-client builds. Before testing purchases from a preview APK, configure the RevenueCat `EXPO_PUBLIC_*` variables in the matching EAS environment/profile. Do not add real RevenueCat values to `eas.json` or commit them to the repository.
+
 Development builds show a warning if any value is missing. Production native builds fail loudly on startup when required RevenueCat config is absent.
 
 ## 🧪 API Smoke Testing (No emulator required)
