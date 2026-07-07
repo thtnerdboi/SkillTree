@@ -94,6 +94,7 @@ This backend can run on Render, but these env vars must be configured:
 
 - `DATABASE_URL` (required)
 - `GEMINI_API_KEY` (required for `ai.generateTree`)
+- `GEMINI_MODEL` (optional; defaults to `gemini-2.5-flash`)
 
 Recommended Render start command:
 

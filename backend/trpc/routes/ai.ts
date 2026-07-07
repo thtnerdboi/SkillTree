@@ -34,6 +34,8 @@ const NODE_IDS = [
   "legacy",
 ] as const;
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+
 const AI_GENERATION_RATE_LIMIT = 20;
 const AI_GENERATION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
@@ -148,7 +150,7 @@ export const aiRouter = createTRPCRouter({
 
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+        model: GEMINI_MODEL,
         generationConfig: { responseMimeType: "application/json" },
       });
 
@@ -211,7 +213,7 @@ export const aiRouter = createTRPCRouter({
 
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+        model: GEMINI_MODEL,
         generationConfig: {
           responseMimeType: "application/json",
         },
