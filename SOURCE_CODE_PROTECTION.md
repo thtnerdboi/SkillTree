@@ -6,7 +6,7 @@ This document outlines the source code protection measures implemented for the S
 ## Legal Protection
 - **License Type**: Proprietary and Confidential
 - **Licensed Under**: LICENSE (Proprietary)
-- **Copyright**: © 2024 thtnerdboi. All rights reserved.
+- **Copyright**: © 2026 thtnerdboi. All rights reserved.
 
 ## Prohibited Activities
 Users are **strictly prohibited** from:
@@ -73,4 +73,4 @@ Violations of this protection policy may result in:
 ## Questions or Licensing Inquiries
 Contact: thtnerdboi
 
-**Last Updated**: 2024
+**Last Updated**: July 9, 2026
