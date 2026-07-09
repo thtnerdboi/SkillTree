@@ -17,3 +17,6 @@ SkillTree is provided "as is." While we strive for 100% uptime, we do not guaran
 
 **5. Account Termination**
 We reserve the right to suspend or terminate accounts that violate these terms.
+
+**6. Use of Code**
+This app may not be repackaged, altered or changed in any shape or form by a third party without consent.
