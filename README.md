@@ -1,110 +1,37 @@
-# SkillTree 🌳
+# SkillTree
 
-SkillTree is a gamified habit tracker and personal development app. It turns your daily routines into an RPG, allowing you to build your "Skill Tree" by completing real-world challenges across three core pillars: Mind, Body, and Craft.
+SkillTree is a gamified habit tracker and personal development app. It turns daily routines into an RPG-style progression system where real-world consistency helps users grow their own skill tree.
 
-## 🎯 Vision
+The app is built around three core pillars: Mind, Body, and Craft. Users complete challenges, earn experience, level up, and unlock new nodes as they build better habits over time.
 
-SkillTree explores how AI can enhance structured self-improvement
-by generating dynamic goals within a gamified progression system.
+## What SkillTree Does
 
-## 🚀 Features
-- **Interactive Skill Tree:** Unlock new nodes as you build consistency.
-- **Local Privacy:** All your core progression, XP, and streaks are saved locally on your device for maximum privacy.
-- **Prestige System:** Reach the top, reset your tree, and earn permanent Prestige ranks.
+- **Gamified habit tracking:** Daily progress earns XP and helps users advance through their personal skill tree.
+- **Three growth pillars:** Challenges are organized around Mind, Body, and Craft to support balanced self-improvement.
+- **Progression and unlocks:** Users unlock new nodes as they complete habits and build consistency.
+- **Prestige system:** Long-term users can reset and climb again while keeping permanent Prestige ranks.
+- **Social circle:** Friends can connect through invite codes and compare visible progress such as level and weekly completion stats.
+- **AI-generated challenges:** SkillTree can use goal and onboarding input to create personalized challenges.
+- **Local and cloud-synced progress:** Core progress can be stored locally and synced through the backend for account and friend features.
 
-## 💎 SkillTree Pro ($5.99/month)
-Users can upgrade to the Pro tier to supercharge their growth:
-- **1.5x XP Multiplier:** Level up faster.
-- **Ad-Free Experience:** Complete focus with zero interruptions.
-- **AI-Powered Goals:** Custom, personalized challenges generated specifically for your lifestyle using AI.
+## SkillTree Pro
 
-## 🛠️ Tech Stack
-- React Native & Expo
-- RevenueCat (V1 mobile subscriptions)
-- Google Mobile Ads (Monetization)
-- Google Gemini API (Dynamic Challenge Generation)
-- AsyncStorage (Local Data Persistence)
+SkillTree Pro adds optional premium features for users who want a more focused or personalized experience:
 
-## RevenueCat configuration
+- **XP multiplier:** Pro users can level up faster.
+- **Ad-free experience:** Pro removes ads from the app experience.
+- **AI-powered goals:** Pro can generate custom challenges based on a user's lifestyle and goals.
 
-RevenueCat is the only V1 billing path for SkillTree Pro. Mobile Pro purchases use RevenueCat with App Store and Google Play billing.
+## Technology
 
-Production builds must receive RevenueCat configuration from EAS environment variables, not from hardcoded values in source code, `eas.json`, or committed `.env` files. These values are `EXPO_PUBLIC_*` Expo variables, so they are bundled into the native app and should be treated as publishable client configuration. Use EAS environment variable visibility such as `sensitive` to avoid casual exposure in dashboards and logs, but do not rely on these values as server-only secrets.
+SkillTree is an Expo React Native app supported by a backend service and cloud database. It uses local progress storage, backend sync, RevenueCat for subscriptions, Google Mobile Ads / AdMob for ads, and Google Gemini API for AI-generated challenges.
 
-Required variables:
+## Support
 
-- `EXPO_PUBLIC_REVENUECAT_API_KEY`
-- `EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID`
-- `EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID`
-- `EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID`
+For support or inquiries, please refer to the Terms of Service and Privacy Policy, or contact the support email listed in those documents.
 
-Set the production values in EAS with placeholder-safe commands like:
+## Support the Project
 
-```bash
-eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_API_KEY --value "REPLACE_WITH_REVENUECAT_PUBLIC_API_KEY"
-eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID --value "pro"
-eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID --value "com.example.skilltree.pro.monthly"
-eas env:create --environment production --visibility sensitive --name EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID --value "com.example.skilltree.pro.yearly"
-```
+SkillTree is built by an independent developer. You can support the project here:
 
-Use the real RevenueCat public app API key, entitlement identifier, and App Store / Google Play product identifiers from the RevenueCat dashboard when running the commands. Do not commit real production values to this repository.
-
-Production EAS builds should use the EAS `production` environment so these variables are available during the native build:
-
-```json
-{
-  "build": {
-    "production": {
-      "environment": "production"
-    }
-  }
-}
-```
-
-Build production releases with:
-
-```bash
-eas build --profile production
-```
-
-Preview APK builds are portable internal builds, not development-client builds. Before testing purchases from a preview APK, configure the RevenueCat `EXPO_PUBLIC_*` variables in the matching EAS environment/profile. Do not add real RevenueCat values to `eas.json` or commit them to the repository.
-
-Development builds show a warning if any value is missing. Production native builds fail loudly on startup when required RevenueCat config is absent.
-
-## 🧪 API Smoke Testing (No emulator required)
-
-You can validate the backend tRPC and optional Gemini flows directly from your laptop:
-
-```bash
-# 1) Run backend in one terminal
-npm run backend
-
-# 2) In another terminal, run smoke tests
-npm run test:apis
-```
-
-Optional flags:
-
-- `API_BASE_URL=http://localhost:3000` (defaults to localhost)
-- `RUN_GEMINI_TEST=1` to include the Gemini generation call
-
-## ☁️ Render deployment checklist
-
-This backend can run on Render, but these env vars must be configured:
-
-- `DATABASE_URL` (required)
-- `GEMINI_API_KEY` (required for `ai.generateTree`)
-- `GEMINI_MODEL` (optional; defaults to `gemini-2.5-flash`)
-
-Recommended Render start command:
-
-```bash
-npm ci && npm run backend
-```
-
-## ☕ Buy me a Coffee
-I am solo vibecoding this so it will take time, if you want to support me you can buy me a coffee with the link below
 https://buymeacoffee.com/thtnerdboi
-
----
-*For support or inquiries, please refer to our Terms of Service and Privacy Policy.*
