@@ -1,11 +1,11 @@
 # Terms of Service for SkillTree
-**Last Updated: February 2026**
+**Last Updated: July 2026**
 
 **1. Acceptance of Terms**
 By downloading and using SkillTree, you agree to these Terms of Service.
 
 **2. Subscriptions and Payments (SkillTree Pro)**
-- SkillTree offers a "Pro" tier processed via Stripe.
+- SkillTree offers a "Pro" tier processed via Revenuecat.
 - Payments are charged to your designated payment method at the time of purchase.
 - You may cancel your subscription at any time, but we do not offer refunds for partial billing periods unless required by law.
 
