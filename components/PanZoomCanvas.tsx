@@ -145,26 +145,27 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
 
     const pan = Gesture.Pan()
       .onStart(() => {
-        if (!isViewportReady()) {
-          return;
-        }
+        if (!isViewportReady()) return;
         cancelAnimation(translateX);
         cancelAnimation(translateY);
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
-        // Lock X axis — the tree is always horizontally centred.
-        const nextX = savedTranslateX.value;
+        const nextX = savedTranslateX.value + e.translationX;
         const nextY = savedTranslateY.value + e.translationY;
-
         const clamped = clampTranslate(nextX, nextY, scale.value);
         translateX.value = clamped.x;
         translateY.value = clamped.y;
       })
       .onEnd((e) => {
         const bounds = getBounds(scale.value);
-
+        translateX.value = withDecay({
+          velocity: e.velocityX,
+          deceleration: 0.994,
+          clamp: [bounds.minX, bounds.maxX],
+          rubberBandEffect: false,
+        });
         translateY.value = withDecay({
           velocity: e.velocityY,
           deceleration: 0.994,
@@ -173,11 +174,14 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
         });
       });
 
+    // React Native's `scale` transform scales around the element's centre, but all
+    // the pan/zoom math treats (0,0) as the scale origin (top-left). The compensation
+    // terms below neutralise the centre-origin offset so both agree.
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [
         { scale: scale.value },
-        { translateX: translateX.value },
-        { translateY: translateY.value },
+        { translateX: translateX.value + (canvasWidth / 2) * (scale.value - 1) },
+        { translateY: translateY.value + (canvasHeight / 2) * (scale.value - 1) },
       ],
     }));
 

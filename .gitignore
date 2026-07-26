@@ -13,6 +13,7 @@ expo-env.d.ts
 # --- Native Build Artifacts ---
 ios/
 android/
+patches/
 *.orig.*
 *.jks
 *.p8

@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Trophy, User, Users } from "lucide-react-native";
+import { Home, User, Users } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 import { BlurView } from "expo-blur";
@@ -125,10 +125,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="leaderboard"
-        options={{
-          title: "Ranks",
-          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} Icon={Trophy} />,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="profile"

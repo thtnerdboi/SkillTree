@@ -11,23 +11,29 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  AdEventType,
-  RewardedAd,
-  RewardedAdEventType,
-  TestIds,
-} from "react-native-google-mobile-ads";
+import Constants from "expo-constants";
 
-// TODO: Create rewarded ad units in your AdMob dashboard and replace these placeholder
-// unit IDs. Keep the TestIds branches for __DEV__ so the emulator always uses test ads.
+// react-native-google-mobile-ads is a native module — not available in Expo Go.
+// All AdMob code is guarded behind this flag.
+const IS_EXPO_GO = Constants.appOwnership === "expo";
+
+const getAdMob = () => {
+  if (IS_EXPO_GO) return null;
+  try {
+    return require("react-native-google-mobile-ads");
+  } catch {
+    return null;
+  }
+};
+
 const REWARDED_UNIT_ID = Platform.select({
   android: __DEV__
-    ? TestIds.REWARDED
+    ? "ca-app-pub-3940256099942544/5224354917"
     : "ca-app-pub-5851180331769845/REPLACE_ANDROID_REWARDED_UNIT",
   ios: __DEV__
-    ? TestIds.REWARDED
+    ? "ca-app-pub-3940256099942544/1712485313"
     : "ca-app-pub-5851180331769845/REPLACE_IOS_REWARDED_UNIT",
-})!;
+}) ?? "ca-app-pub-3940256099942544/5224354917";
 import {
   Award,
   CheckCircle,
@@ -87,6 +93,10 @@ export default function ProfileScreen() {
   useEffect(() => { addBonusXpRef.current = addBonusXp; }, [addBonusXp]);
 
   useEffect(() => {
+    const AdMob = getAdMob();
+    if (!AdMob) return; // Expo Go — skip ad lifecycle
+
+    const { RewardedAd, RewardedAdEventType, AdEventType } = AdMob;
     let isMounted = true;
 
     const loadAd = () => {
@@ -121,10 +131,10 @@ export default function ProfileScreen() {
         unsubError();
         rewardedAdRef.current = null;
         setAdLoaded(false);
-        loadAd(); // preload next one immediately
+        loadAd();
       });
 
-      const unsubError = ad.addAdEventListener(AdEventType.ERROR, (error) => {
+      const unsubError = ad.addAdEventListener(AdEventType.ERROR, (error: Error) => {
         console.warn("[RewardedAd] Load error:", error.message);
         unsubLoaded();
         unsubEarned();
@@ -132,7 +142,7 @@ export default function ProfileScreen() {
         unsubError();
         rewardedAdRef.current = null;
         if (isMounted) setAdLoaded(false);
-        setTimeout(loadAd, 30_000); // retry after 30 s
+        setTimeout(loadAd, 30_000);
       });
 
       ad.load();
@@ -160,6 +170,10 @@ export default function ProfileScreen() {
 
   const handleWatchAd = () => {
     if (adWatchCooldown) return;
+    if (IS_EXPO_GO) {
+      Alert.alert("Expo Go", "Ads aren't available in Expo Go. This will work in a real build.");
+      return;
+    }
     if (!adLoaded || !rewardedAdRef.current) {
       Alert.alert("Ad Loading", "The ad is still loading. Please try again in a moment.");
       return;
@@ -276,32 +290,32 @@ export default function ProfileScreen() {
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
               <Zap size={18} color={Colors.light.tint} strokeWidth={2.5} />
-              <Text style={styles.statValue}>{state.xp.toLocaleString()}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{state.xp.toLocaleString()}</Text>
               <Text style={styles.statLabel}>Total XP</Text>
             </View>
             <View style={styles.statCard}>
               <Trophy size={18} color="#FFD700" strokeWidth={2.5} />
-              <Text style={styles.statValue}>{state.prestigeCount}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{state.prestigeCount}</Text>
               <Text style={styles.statLabel}>Prestiges</Text>
             </View>
             <View style={styles.statCard}>
               <Target size={18} color={Colors.light.success} strokeWidth={2.5} />
-              <Text style={styles.statValue}>{completedNodes}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{completedNodes}</Text>
               <Text style={styles.statLabel}>Nodes Done</Text>
             </View>
             <View style={styles.statCard}>
               <CheckCircle size={18} color="#A78BFA" strokeWidth={2.5} />
-              <Text style={styles.statValue}>{completedChallenges}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{completedChallenges}</Text>
               <Text style={styles.statLabel}>Challenges</Text>
             </View>
             <View style={styles.statCard}>
               <Star size={18} color="#FF6A4D" strokeWidth={2.5} />
-              <Text style={styles.statValue}>{completedLevels}</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{completedLevels}</Text>
               <Text style={styles.statLabel}>Levels Done</Text>
             </View>
             <View style={styles.statCard}>
               <Award size={18} color={Colors.light.tint} strokeWidth={2.5} />
-              <Text style={styles.statValue}>{weeklyCompletion}%</Text>
+              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{weeklyCompletion}%</Text>
               <Text style={styles.statLabel}>Weekly</Text>
             </View>
           </View>
@@ -527,8 +541,8 @@ const styles = StyleSheet.create({
   xpBarLabel: { fontFamily: "OutfitSemiBold", fontSize: 11, color: Colors.light.muted },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: { flex: 1, minWidth: "30%", backgroundColor: "#0C1120", borderRadius: 18, padding: 16, gap: 6, alignItems: "center", borderWidth: 1, borderColor: "#1A2238" },
-  statValue: { fontFamily: "OutfitBlack", fontSize: 22, color: Colors.light.text },
+  statCard: { flex: 1, minWidth: "30%", backgroundColor: "#0C1120", borderRadius: 18, padding: 14, gap: 4, alignItems: "center", borderWidth: 1, borderColor: "#1A2238" },
+  statValue: { fontFamily: "OutfitBlack", fontSize: 20, color: Colors.light.text },
   statLabel: { fontFamily: "OutfitSemiBold", fontSize: 10, color: Colors.light.muted, textAlign: "center" },
 
   sectionCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 14, borderWidth: 1, borderColor: "#1A2238" },
@@ -536,7 +550,7 @@ const styles = StyleSheet.create({
 
   domainRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   domainDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  domainLabel: { fontFamily: "OutfitBold", fontSize: 13, color: Colors.light.text, width: 44 },
+  domainLabel: { fontFamily: "OutfitBold", fontSize: 13, color: Colors.light.text, width: 52, flexShrink: 0 },
   domainBarTrack: { flex: 1, height: 5, backgroundColor: "#111828", borderRadius: 3, overflow: "hidden" },
   domainBarFill: { height: "100%", borderRadius: 3 },
   domainStat: { fontFamily: "OutfitBold", fontSize: 12, width: 30, textAlign: "right" },

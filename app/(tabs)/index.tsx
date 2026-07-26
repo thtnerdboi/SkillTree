@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   Platform,
   Pressable,
   SafeAreaView,
@@ -14,6 +15,8 @@ import {
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle as SvgCircle, Path } from "react-native-svg";
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 import {
   Activity,
   Award,
@@ -93,8 +96,8 @@ const HEADER_EXPANDED_HEIGHT = 232;
 const HEADER_COLLAPSED_HEIGHT = 86;
 const MIN_MAP_SCALE = 0.5;
 const MAX_MAP_SCALE = 2.0;
-const LINE_GLOW_WIDTH = 10;
-const LINE_CORE_WIDTH = 4.5;
+const LINE_GLOW_WIDTH = 20;
+const LINE_CORE_WIDTH = 6;
 const LABEL_PILL_WIDTH = 132;
 const LABEL_CONNECTOR_HEIGHT = 16;
 const APP_BACKGROUND = "#080D1A";
@@ -160,21 +163,21 @@ function GlowLayers({ color, complete }: { color: string; complete: boolean }) {
         pointerEvents="none"
         style={[
           styles.glowOuter,
-          { backgroundColor: alpha(color, complete ? "15" : "0D") },
+          { backgroundColor: alpha(color, complete ? "22" : "10") },
         ]}
       />
       <View
         pointerEvents="none"
         style={[
           styles.glowMid,
-          { backgroundColor: alpha(color, complete ? "1B" : "10") },
+          { backgroundColor: alpha(color, complete ? "2E" : "16") },
         ]}
       />
       <View
         pointerEvents="none"
         style={[
           styles.glowInner,
-          { borderColor: alpha(color, complete ? "3A" : "26") },
+          { borderColor: alpha(color, complete ? "55" : "2E") },
         ]}
       />
     </>
@@ -557,6 +560,59 @@ export default function TreeScreen() {
       return parents.map((parentId) => ({ parentId, nodeId: node.id }));
     });
   }, []);
+
+  // Light-travel animation state: maps connectionKey → Animated.Value (0→1)
+  const [lightAnimations, setLightAnimations] = useState<Map<string, Animated.Value>>(new Map());
+  const prevCompletedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const nowComplete = new Set(
+      SKILL_NODES.filter((n) => isNodeComplete(n.id)).map((n) => n.id)
+    );
+    const newlyDone = [...nowComplete].filter((id) => !prevCompletedRef.current.has(id));
+
+    if (newlyDone.length > 0) {
+      // Strong completion haptic
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 180);
+
+      const newAnims: Array<[string, Animated.Value]> = [];
+
+      newlyDone.forEach((nodeId) => {
+        // Animate: incoming branch (parent → this node) + outgoing branches (this node → children)
+        const relevant = connections.filter(
+          (c) => c.nodeId === nodeId || c.parentId === nodeId
+        );
+        relevant.forEach((conn) => {
+          const key = `${conn.parentId}-${conn.nodeId}`;
+          const anim = new Animated.Value(0);
+          newAnims.push([key, anim]);
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 680,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false, // SVG props can't use native driver
+          }).start(() => {
+            setLightAnimations((prev) => {
+              const next = new Map(prev);
+              next.delete(key);
+              return next;
+            });
+          });
+        });
+      });
+
+      if (newAnims.length > 0) {
+        setLightAnimations((prev) => {
+          const next = new Map(prev);
+          newAnims.forEach(([k, v]) => next.set(k, v));
+          return next;
+        });
+      }
+    }
+
+    prevCompletedRef.current = nowComplete;
+  }, [completedChallenges, connections, isNodeComplete]);
 
   useEffect(() => {
     const topAnimation = Animated.loop(
@@ -952,12 +1008,16 @@ export default function TreeScreen() {
                 const controlOffsetY = Math.max(Math.abs(dy) * 0.18, 44);
                 const path = `M ${parentPoint.x} ${parentPoint.y} C ${parentPoint.x + controlOffsetX} ${parentPoint.y - controlOffsetY}, ${childPoint.x - controlOffsetX} ${childPoint.y + controlOffsetY}, ${childPoint.x} ${childPoint.y}`;
 
+                // Approximate bezier length for dash animation
+                const approxLen = Math.sqrt(dx * dx + dy * dy) * 1.22;
+                const lightAnim = lightAnimations.get(`${parentId}-${nodeId}`);
+
                 return (
                   <React.Fragment key={`${parentId}-${nodeId}`}>
                     {connectorActive ? (
                       <Path
                         d={path}
-                        stroke={alpha(color, "1E")}
+                        stroke={alpha(color, "28")}
                         strokeWidth={LINE_GLOW_WIDTH}
                         strokeLinecap="round"
                         fill="none"
@@ -967,13 +1027,43 @@ export default function TreeScreen() {
                       d={path}
                       stroke={
                         connectorActive
-                          ? alpha(color, "75")
-                          : "rgba(255,255,255,0.11)"
+                          ? alpha(color, "99")
+                          : "rgba(255,255,255,0.18)"
                       }
-                      strokeWidth={connectorActive ? LINE_CORE_WIDTH : 3}
+                      strokeWidth={connectorActive ? LINE_CORE_WIDTH : 3.5}
                       strokeLinecap="round"
                       fill="none"
                     />
+                    {lightAnim ? (
+                      <>
+                        {/* Wide soft glow of the travelling light */}
+                        <AnimatedPath
+                          d={path}
+                          stroke={alpha(color, "55")}
+                          strokeWidth={LINE_GLOW_WIDTH + 4}
+                          strokeLinecap="round"
+                          fill="none"
+                          strokeDasharray={[48, approxLen * 2]}
+                          strokeDashoffset={lightAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, -(approxLen + 48)],
+                          })}
+                        />
+                        {/* Bright white core of the travelling light */}
+                        <AnimatedPath
+                          d={path}
+                          stroke="rgba(255,255,255,0.92)"
+                          strokeWidth={LINE_CORE_WIDTH - 1}
+                          strokeLinecap="round"
+                          fill="none"
+                          strokeDasharray={[22, approxLen * 2]}
+                          strokeDashoffset={lightAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, -(approxLen + 22)],
+                          })}
+                        />
+                      </>
+                    ) : null}
                   </React.Fragment>
                 );
               })}
