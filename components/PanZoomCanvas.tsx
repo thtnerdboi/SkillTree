@@ -2,8 +2,8 @@ import React, { forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  clamp,
   Easing,
+  runOnUI,
   useSharedValue,
   useAnimatedStyle,
   withTiming,
@@ -26,6 +26,9 @@ interface Props {
   maxScale?: number;
 }
 
+// How many px the user can overscroll past the canvas edge on each axis.
+const EDGE_PADDING = 80;
+
 export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
   ({
     children,
@@ -38,156 +41,157 @@ export const PanZoomCanvas = forwardRef<PanZoomCanvasRef, Props>(
   }, ref) => {
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
-    const scale = useSharedValue(1);
-    const savedTranslateX = useSharedValue(0);
-    const savedTranslateY = useSharedValue(0);
+    const scale     = useSharedValue(1);
+    const savedX    = useSharedValue(0);
+    const savedY    = useSharedValue(0);
 
-    const getBounds = (nextScale: number) => {
+    // Bounds for translateX / translateY given a scale value.
+    // Our effective transform is:  screen_pos = canvas_pos * scale + translate
+    // (the animatedStyle compensation below makes this exact).
+    const getBounds = (s: number) => {
       'worklet';
-      const scaledWidth = canvasWidth * nextScale;
-      const scaledHeight = canvasHeight * nextScale;
-      const minX = Math.min(0, viewportWidth - scaledWidth);
-      const maxX = scaledWidth <= viewportWidth ? (viewportWidth - scaledWidth) / 2 : 0;
-      const minY = Math.min(0, viewportHeight - scaledHeight);
-      const maxY = scaledHeight <= viewportHeight ? (viewportHeight - scaledHeight) / 2 : 0;
+      const sw = canvasWidth  * s;
+      const sh = canvasHeight * s;
+
+      // Horizontal: keep canvas covering the viewport with EDGE_PADDING leeway.
+      const minX = sw <= viewportWidth
+        ? (viewportWidth - sw) / 2          // canvas narrower: centre it
+        : viewportWidth - sw - EDGE_PADDING; // allow scroll to right edge + pad
+      const maxX = sw <= viewportWidth
+        ? (viewportWidth - sw) / 2
+        : EDGE_PADDING;                      // allow scroll to left edge + pad
+
+      // Vertical: same logic.
+      const minY = sh <= viewportHeight
+        ? (viewportHeight - sh) / 2
+        : viewportHeight - sh - EDGE_PADDING;
+      const maxY = sh <= viewportHeight
+        ? (viewportHeight - sh) / 2
+        : EDGE_PADDING;
+
       return { minX, maxX, minY, maxY };
     };
 
-    const isViewportReady = () => {
+    const clampTo = (v: number, lo: number, hi: number) => {
       'worklet';
-      return viewportWidth > 0 && viewportHeight > 0;
+      return Math.max(lo, Math.min(hi, v));
     };
 
-    const clampTranslate = (x: number, y: number, nextScale: number) => {
-      'worklet';
-      const bounds = getBounds(nextScale);
-      return {
-        x: clamp(x, bounds.minX, bounds.maxX),
-        y: clamp(y, bounds.minY, bounds.maxY),
-      };
-    };
-
-    const centerOnPoint = (x: number, y: number, animated: boolean) => {
-      'worklet';
-      const targetX = viewportWidth / 2 - x * scale.value;
-      const targetY = viewportHeight / 2 - y * scale.value;
-      const clamped = clampTranslate(targetX, targetY, scale.value);
-
-      if (animated) {
-        translateX.value = withTiming(clamped.x, {
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-        });
-        translateY.value = withTiming(clamped.y, {
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-        });
-      } else {
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
-      }
-
-      savedTranslateX.value = clamped.x;
-      savedTranslateY.value = clamped.y;
-    };
-
+    // ── Imperative handle (called from JS thread → dispatch to UI thread) ──
     useImperativeHandle(ref, () => ({
-      centerOn: (x, y, animated = true) => {
-        cancelAnimation(translateX);
-        cancelAnimation(translateY);
-        centerOnPoint(x, y, animated);
+
+      centerOn: (x: number, y: number, animated = true) => {
+        runOnUI(() => {
+          'worklet';
+          cancelAnimation(translateX);
+          cancelAnimation(translateY);
+
+          const s  = scale.value;
+          const tx = viewportWidth  / 2 - x * s;
+          const ty = viewportHeight / 2 - y * s;
+          const b  = getBounds(s);
+          const cx = clampTo(tx, b.minX, b.maxX);
+          const cy = clampTo(ty, b.minY, b.maxY);
+
+          if (animated) {
+            const cfg = { duration: 520, easing: Easing.out(Easing.cubic) };
+            translateX.value = withTiming(cx, cfg);
+            translateY.value = withTiming(cy, cfg);
+          } else {
+            translateX.value = cx;
+            translateY.value = cy;
+          }
+          savedX.value = cx;
+          savedY.value = cy;
+        })();
       },
 
       zoomBy: (delta: number, animated = true) => {
-        cancelAnimation(scale);
-        cancelAnimation(translateX);
-        cancelAnimation(translateY);
+        runOnUI(() => {
+          'worklet';
+          cancelAnimation(scale);
+          cancelAnimation(translateX);
+          cancelAnimation(translateY);
 
-        const currentScale = scale.value;
-        const newScale = Math.min(Math.max(currentScale + delta, minScale), maxScale);
-        if (newScale === currentScale) return;
+          const s        = scale.value;
+          const newScale = Math.min(Math.max(s + delta, minScale), maxScale);
+          if (newScale === s) return;
 
-        // Keep the canvas-Y coordinate that's currently at the viewport centre stable.
-        const canvasCenterY = (viewportHeight / 2 - translateY.value) / currentScale;
-        let targetY = viewportHeight / 2 - canvasCenterY * newScale;
+          // Keep the canvas-Y coord currently at viewport centre stable.
+          const anchorY  = (viewportHeight / 2 - translateY.value) / s;
+          let   ty       = viewportHeight / 2 - anchorY * newScale;
+          // Keep canvas horizontally centred.
+          let   tx       = (viewportWidth - canvasWidth * newScale) / 2;
 
-        // X: keep canvas horizontally centred at the new scale.
-        let targetX = (viewportWidth - canvasWidth * newScale) / 2;
+          const b = getBounds(newScale);
+          tx = clampTo(tx, b.minX, b.maxX);
+          ty = clampTo(ty, b.minY, b.maxY);
 
-        // Clamp to valid bounds.
-        const scaledWidth = canvasWidth * newScale;
-        const scaledHeight = canvasHeight * newScale;
-        const minXBound = Math.min(0, viewportWidth - scaledWidth);
-        const maxXBound = scaledWidth <= viewportWidth ? (viewportWidth - scaledWidth) / 2 : 0;
-        const minYBound = Math.min(0, viewportHeight - scaledHeight);
-        const maxYBound = scaledHeight <= viewportHeight ? (viewportHeight - scaledHeight) / 2 : 0;
-
-        targetX = Math.min(Math.max(targetX, minXBound), maxXBound);
-        targetY = Math.min(Math.max(targetY, minYBound), maxYBound);
-
-        const timingConfig = { duration: 280, easing: Easing.out(Easing.cubic) };
-
-        if (animated) {
-          scale.value = withTiming(newScale, timingConfig);
-          translateX.value = withTiming(targetX, timingConfig);
-          translateY.value = withTiming(targetY, timingConfig);
-        } else {
-          scale.value = newScale;
-          translateX.value = targetX;
-          translateY.value = targetY;
-        }
-
-        // Update saved values so the next pan gesture starts from the right position.
-        savedTranslateX.value = targetX;
-        savedTranslateY.value = targetY;
+          if (animated) {
+            const cfg = { duration: 280, easing: Easing.out(Easing.cubic) };
+            scale.value      = withTiming(newScale, cfg);
+            translateX.value = withTiming(tx, cfg);
+            translateY.value = withTiming(ty, cfg);
+          } else {
+            scale.value      = newScale;
+            translateX.value = tx;
+            translateY.value = ty;
+          }
+          savedX.value = tx;
+          savedY.value = ty;
+        })();
       },
     }));
 
+    // ── Pan gesture (runs as worklet on UI thread via Reanimated) ──
     const pan = Gesture.Pan()
       .onStart(() => {
-        if (!isViewportReady()) return;
         cancelAnimation(translateX);
         cancelAnimation(translateY);
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
+        savedX.value = translateX.value;
+        savedY.value = translateY.value;
       })
       .onUpdate((e) => {
-        const nextX = savedTranslateX.value + e.translationX;
-        const nextY = savedTranslateY.value + e.translationY;
-        const clamped = clampTranslate(nextX, nextY, scale.value);
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
+        const b  = getBounds(scale.value);
+        translateX.value = clampTo(savedX.value + e.translationX, b.minX, b.maxX);
+        translateY.value = clampTo(savedY.value + e.translationY, b.minY, b.maxY);
       })
       .onEnd((e) => {
-        const bounds = getBounds(scale.value);
+        const b = getBounds(scale.value);
         translateX.value = withDecay({
           velocity: e.velocityX,
           deceleration: 0.994,
-          clamp: [bounds.minX, bounds.maxX],
+          clamp: [b.minX, b.maxX],
           rubberBandEffect: false,
         });
         translateY.value = withDecay({
           velocity: e.velocityY,
           deceleration: 0.994,
-          clamp: [bounds.minY, bounds.maxY],
+          clamp: [b.minY, b.maxY],
           rubberBandEffect: false,
         });
       });
 
-    // React Native's `scale` transform scales around the element's centre, but all
-    // the pan/zoom math treats (0,0) as the scale origin (top-left). The compensation
-    // terms below neutralise the centre-origin offset so both agree.
+    // React Native scales around the element's centre, but our math treats (0,0)
+    // as the scale origin. The extra translate terms compensate so that
+    // screen_x = canvas_x * scale + translateX  (and same for Y).
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [
         { scale: scale.value },
-        { translateX: translateX.value + (canvasWidth / 2) * (scale.value - 1) },
+        { translateX: translateX.value + (canvasWidth  / 2) * (scale.value - 1) },
         { translateY: translateY.value + (canvasHeight / 2) * (scale.value - 1) },
       ],
     }));
 
     return (
       <GestureDetector gesture={pan}>
-        <Animated.View style={[styles.canvas, animatedStyle, { width: canvasWidth, height: canvasHeight }]}>
+        <Animated.View
+          style={[
+            styles.canvas,
+            animatedStyle,
+            { width: canvasWidth, height: canvasHeight },
+          ]}
+        >
           {children}
         </Animated.View>
       </GestureDetector>
