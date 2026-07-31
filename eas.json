@@ -6,7 +6,15 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID": "arcstep_skilltree_pro",
+        "EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID": "monthly",
+        "EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID": "yearly",
+        "EXPO_PUBLIC_POSTHOG_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com"
+      }
     },
     "preview": {
       "distribution": "internal",
@@ -16,8 +24,12 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com",
-        "EXPO_PUBLIC_POSTHOG_KEY": ""
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID": "arcstep_skilltree_pro",
+        "EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID": "monthly",
+        "EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID": "yearly",
+        "EXPO_PUBLIC_POSTHOG_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com"
       }
     },
     "production": {
@@ -25,8 +37,12 @@
       "developmentClient": false,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com",
-        "EXPO_PUBLIC_POSTHOG_KEY": ""
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID": "arcstep_skilltree_pro",
+        "EXPO_PUBLIC_REVENUECAT_MONTHLY_PRODUCT_ID": "monthly",
+        "EXPO_PUBLIC_REVENUECAT_YEARLY_PRODUCT_ID": "yearly",
+        "EXPO_PUBLIC_POSTHOG_KEY": "YOUR_KEY_HERE",
+        "EXPO_PUBLIC_API_URL": "https://skilltree-backend-rff0.onrender.com"
       }
     }
   },
