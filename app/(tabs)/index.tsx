@@ -94,8 +94,8 @@ const NODE_SIZE = 94;
 const GLOW_SIZE = 170;
 const HEADER_EXPANDED_HEIGHT = 232;
 const HEADER_COLLAPSED_HEIGHT = 86;
-const MIN_MAP_SCALE = 0.5;
-const MAX_MAP_SCALE = 2.0;
+const MIN_MAP_SCALE = 0.6;
+const MAX_MAP_SCALE = 1.6;
 const LINE_GLOW_WIDTH = 20;
 const LINE_CORE_WIDTH = 6;
 const LABEL_PILL_WIDTH = 132;
@@ -548,6 +548,12 @@ export default function TreeScreen() {
     }, {});
   }, [canvasWidth, originY]);
 
+  const snapYPositions = useMemo<number[]>(() => {
+    const levels = Array.from(new Set(SKILL_NODES.map((n) => n.levelNumber)));
+    const points = [originY, ...levels.map((l) => originY - l * LEVEL_SPACING)];
+    return Array.from(new Set(points)).sort((a, b) => b - a);
+  }, [originY]);
+
   const connections = useMemo(() => {
     return SKILL_NODES.flatMap((node) => {
       const parents = node.parentIds.length > 0 ? node.parentIds : ["origin"];
@@ -966,6 +972,7 @@ export default function TreeScreen() {
             viewportHeight={viewportSize.height}
             minScale={MIN_MAP_SCALE}
             maxScale={MAX_MAP_SCALE}
+            snapYPositions={snapYPositions}
           >
             <View
               pointerEvents="none"
