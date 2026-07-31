@@ -15,10 +15,10 @@ type AdBannerProps = {
 const BANNER_UNIT_ID = Platform.select({
   android: __DEV__
     ? TestIds.BANNER
-    : "ca-app-pub-5851180331769845/REPLACE_ANDROID_BANNER_UNIT",
+    : "ca-app-pub-5851180331769845/4361964831",
   ios: __DEV__
     ? TestIds.BANNER
-    : "ca-app-pub-5851180331769845/REPLACE_IOS_BANNER_UNIT",
+    : "ca-app-pub-5851180331769845/4267065252",
 })!;
 
 export function AdBanner({ style }: AdBannerProps) {
@@ -27,8 +27,8 @@ export function AdBanner({ style }: AdBannerProps) {
   try {
     const { BannerAd, BannerAdSize, TestIds: T } = require("react-native-google-mobile-ads");
     const unitId = Platform.select({
-      android: __DEV__ ? T.BANNER : "ca-app-pub-5851180331769845/REPLACE_ANDROID_BANNER_UNIT",
-      ios: __DEV__ ? T.BANNER : "ca-app-pub-5851180331769845/REPLACE_IOS_BANNER_UNIT",
+      android: __DEV__ ? T.BANNER : "ca-app-pub-5851180331769845/4361964831",
+      ios: __DEV__ ? T.BANNER : "ca-app-pub-5851180331769845/4267065252",
     })!;
     return (
       <View style={style}>

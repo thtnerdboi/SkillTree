@@ -1,17 +1,16 @@
-import { pgTable, text, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+﻿import { pgTable, text, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-// 👤 Users Table
+// ðŸ‘¤ Users Table
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // The usr_... ID from your app
   name: text("name").notNull(),
   inviteCode: text("invite_code").notNull().unique(),
   weeklyCompletion: integer("weekly_completion").default(0),
   isPro: boolean("is_pro").default(false),
-  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// 👥 Friends Table (The Junction)
+// ðŸ‘¥ Friends Table (The Junction)
 export const friends = pgTable("friends", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: text("user_id").references(() => users.id),
@@ -20,7 +19,7 @@ export const friends = pgTable("friends", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// ✅ Completed Challenges Table
+// âœ… Completed Challenges Table
 export const completedChallenges = pgTable(
   "completed_challenges",
   {
@@ -38,3 +37,4 @@ export const completedChallenges = pgTable(
     ),
   })
 );
+

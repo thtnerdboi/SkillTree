@@ -29,10 +29,10 @@ const getAdMob = () => {
 const REWARDED_UNIT_ID = Platform.select({
   android: __DEV__
     ? "ca-app-pub-3940256099942544/5224354917"
-    : "ca-app-pub-5851180331769845/REPLACE_ANDROID_REWARDED_UNIT",
+    : "ca-app-pub-5851180331769845/9511286793",
   ios: __DEV__
     ? "ca-app-pub-3940256099942544/1712485313"
-    : "ca-app-pub-5851180331769845/REPLACE_IOS_REWARDED_UNIT",
+    : "ca-app-pub-5851180331769845/4258960118",
 }) ?? "ca-app-pub-3940256099942544/5224354917";
 import {
   Award,
