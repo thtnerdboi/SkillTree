@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#060810"
     },
     "ios": {
       "supportsTablet": false,
@@ -40,8 +40,7 @@
           "iosAppId": "ca-app-pub-5851180331769845~2890404402"
         }
       ],
-      "expo-font",
-      "expo-web-browser"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
