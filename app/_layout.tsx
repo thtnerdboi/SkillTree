@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
 import PostHog from "posthog-react-native";
 import * as SplashScreen from "expo-splash-screen";
@@ -11,14 +11,30 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { RevenueCatProvider } from "../lib/revenuecat";
 import { analytics } from "../utils/analytics";
+import type { AnalyticsProperties } from "../utils/event-types";
 import { AppStateProvider } from "../state/app-state";
 import { trpc, trpcClient } from "../lib/trpc";
 
 SplashScreen.preventAutoHideAsync();
 
+const WELCOME_KEY = "skilltree.welcomed";
 const NOTIFICATION_PERMISSION_KEY = "skilltree.notifications.permissionGranted";
 const DAILY_NOTIFICATION_ID_KEY = "skilltree.notifications.dailyStreakId";
 const DAILY_NOTIFICATION_CHANNEL_ID = "daily-streak-reminders";
+
+type PostHogProperties = Record<string, string | number | boolean | null>;
+
+function toPostHogProperties(properties?: AnalyticsProperties): PostHogProperties | undefined {
+  if (!properties) {
+    return undefined;
+  }
+
+  const entries = Object.entries(properties).filter(
+    (entry): entry is [string, string | number | boolean | null] => entry[1] !== undefined
+  );
+
+  return Object.fromEntries(entries);
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -89,8 +105,32 @@ async function rescheduleDailyStreakNotification() {
 }
 
 function RootLayoutNav() {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function routeFirstLaunch() {
+      const welcomed = await AsyncStorage.getItem(WELCOME_KEY);
+
+      if (mounted && welcomed !== "true" && pathname !== "/welcome") {
+        router.replace("/welcome");
+      }
+    }
+
+    routeFirstLaunch().catch((error) => {
+      console.warn("[welcome] Failed to check welcome state", error);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [pathname, router]);
+
   return (
     <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
+      <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>
@@ -105,8 +145,8 @@ export default function RootLayout() {
       const posthog = new PostHog(posthogKey);
 
       analytics.configure({
-        identify: (userId, traits) => posthog.identify(userId, traits),
-        track: (event, properties) => posthog.capture(event, properties),
+        identify: (userId, traits) => posthog.identify(userId, toPostHogProperties(traits)),
+        track: (event, properties) => posthog.capture(event, toPostHogProperties(properties)),
         reset: () => posthog.reset(),
       });
     }
