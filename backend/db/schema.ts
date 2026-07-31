@@ -7,7 +7,6 @@ export const users = pgTable("users", {
   inviteCode: text("invite_code").notNull().unique(),
   weeklyCompletion: integer("weekly_completion").default(0),
   isPro: boolean("is_pro").default(false),
-  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
