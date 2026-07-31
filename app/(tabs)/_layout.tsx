@@ -1,7 +1,7 @@
 import { Tabs } from "expo-router";
 import { Home, User, Users } from "lucide-react-native";
 import React from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { BlurView } from "expo-blur";
 
 import Colors from "../../constants/colors";
@@ -48,21 +48,21 @@ function TabIcon({
   );
 }
 
+const tabBarGlassStyle = {
+  flex: 1,
+  borderRadius: 32,
+  overflow: "hidden" as const,
+  backgroundColor: "rgba(8,13,26,0.68)",
+  borderWidth: 1,
+  borderColor: "rgba(255,255,255,0.1)",
+};
+
 function TabBarGlass() {
-  return (
-    <BlurView
-      tint="dark"
-      intensity={80}
-      style={{
-        flex: 1,
-        borderRadius: 32,
-        overflow: "hidden",
-        backgroundColor: "rgba(8,13,26,0.68)",
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.1)",
-      }}
-    />
-  );
+  if (Platform.OS === "android") {
+    return <View style={[tabBarGlassStyle, { backgroundColor: "#0d1120" }]} />;
+  }
+
+  return <BlurView tint="dark" intensity={80} style={tabBarGlassStyle} />;
 }
 
 const tabBarStyle = {
