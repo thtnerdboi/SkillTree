@@ -6,6 +6,15 @@ import { db } from "../../db";
 import { completedChallenges } from "../../db/schema";
 import { createTRPCRouter, protectedProcedure } from "../create-context";
 
+function throwProgressUnavailable(error: unknown): never {
+  console.error("[progress] Neon database error:", error);
+
+  throw new TRPCError({
+    code: "SERVICE_UNAVAILABLE",
+    message: "Progress is temporarily unavailable. Please try again shortly.",
+  });
+}
+
 export const progressRouter = createTRPCRouter({
   getCompletedChallenges: protectedProcedure
     .input(
@@ -21,18 +30,22 @@ export const progressRouter = createTRPCRouter({
         });
       }
 
-      return db
-        .select({
-          id: completedChallenges.id,
-          userId: completedChallenges.userId,
-          challengeId: completedChallenges.challengeId,
-          nodeId: completedChallenges.nodeId,
-          challengeXp: completedChallenges.challengeXp,
-          completedAt: completedChallenges.completedAt,
-        })
-        .from(completedChallenges)
-        .where(eq(completedChallenges.userId, input.userId))
-        .orderBy(desc(completedChallenges.completedAt));
+      try {
+        return await db
+          .select({
+            id: completedChallenges.id,
+            userId: completedChallenges.userId,
+            challengeId: completedChallenges.challengeId,
+            nodeId: completedChallenges.nodeId,
+            challengeXp: completedChallenges.challengeXp,
+            completedAt: completedChallenges.completedAt,
+          })
+          .from(completedChallenges)
+          .where(eq(completedChallenges.userId, input.userId))
+          .orderBy(desc(completedChallenges.completedAt));
+      } catch (error) {
+        throwProgressUnavailable(error);
+      }
     }),
 
   addCompletedChallenge: protectedProcedure
@@ -52,28 +65,32 @@ export const progressRouter = createTRPCRouter({
         });
       }
 
-      const existing = await db
-        .select({ id: completedChallenges.id })
-        .from(completedChallenges)
-        .where(
-          and(
-            eq(completedChallenges.userId, input.userId),
-            eq(completedChallenges.challengeId, input.challengeId)
+      try {
+        const existing = await db
+          .select({ id: completedChallenges.id })
+          .from(completedChallenges)
+          .where(
+            and(
+              eq(completedChallenges.userId, input.userId),
+              eq(completedChallenges.challengeId, input.challengeId)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (existing.length > 0) {
-        return { status: "already_completed" as const };
+        if (existing.length > 0) {
+          return { status: "already_completed" as const };
+        }
+
+        await db.insert(completedChallenges).values({
+          userId: input.userId,
+          challengeId: input.challengeId,
+          nodeId: input.nodeId,
+          challengeXp: input.challengeXp,
+        });
+
+        return { status: "completed" as const };
+      } catch (error) {
+        throwProgressUnavailable(error);
       }
-
-      await db.insert(completedChallenges).values({
-        userId: input.userId,
-        challengeId: input.challengeId,
-        nodeId: input.nodeId,
-        challengeXp: input.challengeXp,
-      });
-
-      return { status: "completed" as const };
     }),
 });

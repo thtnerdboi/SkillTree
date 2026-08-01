@@ -35,6 +35,7 @@ const NODE_IDS = [
 ] as const;
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const MAX_GEMINI_INPUT_LENGTH = 500;
 
 const AI_GENERATION_RATE_LIMIT = 20;
 const AI_GENERATION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -122,6 +123,24 @@ const nodeChallengeSingleSchema = z.object({
   detail: z.string().min(1).max(120),
 });
 
+function sanitizeGeminiInput<T>(value: T): T {
+  if (typeof value === "string") {
+    return value.slice(0, MAX_GEMINI_INPUT_LENGTH) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeGeminiInput(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, sanitizeGeminiInput(item)])
+    ) as T;
+  }
+
+  return value;
+}
+
 export const aiRouter = createTRPCRouter({
   regenerateNode: publicProcedure
     .input(
@@ -139,6 +158,7 @@ export const aiRouter = createTRPCRouter({
     )
     .mutation(async ({ input, ctx }) => {
       enforceAiGenerationRateLimit(getRateLimitKey(ctx.req, ctx.userId));
+      const safeInput = sanitizeGeminiInput(input);
 
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {
@@ -156,9 +176,9 @@ export const aiRouter = createTRPCRouter({
 
       const prompt = `
         You are an expert gamified habit tracker and RPG skill tree designer.
-        Generate exactly 3 personalised micro-challenges for the skill node "${input.nodeTitle}".
-        Node description: ${input.nodeDescription}
-        User's personal goal: ${input.goal}
+        Generate exactly 3 personalised micro-challenges for the skill node "${safeInput.nodeTitle}".
+        Node description: ${safeInput.nodeDescription}
+        User's personal goal: ${safeInput.goal}
 
         Rules:
         - Titles: under 4 words, written like RPG quest names
@@ -180,7 +200,7 @@ export const aiRouter = createTRPCRouter({
         return challenges.map((c, i) => ({
           title: c.title,
           detail: c.detail,
-          xp: input.xpValues[i],
+          xp: safeInput.xpValues[i],
         }));
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -202,6 +222,7 @@ export const aiRouter = createTRPCRouter({
     )
     .mutation(async ({ input, ctx }) => {
       enforceAiGenerationRateLimit(getRateLimitKey(ctx.req, ctx.userId));
+      const safeInput = sanitizeGeminiInput(input);
 
       const apiKey = process.env.GEMINI_API_KEY || "";
       if (!apiKey) {
@@ -222,9 +243,9 @@ export const aiRouter = createTRPCRouter({
       const prompt = `
         You are an expert gamified habit tracker and RPG skill tree designer.
         The user has provided the following main goals:
-        - Mind: ${input.mind || "General mental clarity"}
-        - Body: ${input.body || "General physical health"}
-        - Craft: ${input.craft || "General skill improvement"}
+        - Mind: ${safeInput.mind || "General mental clarity"}
+        - Body: ${safeInput.body || "General physical health"}
+        - Craft: ${safeInput.craft || "General skill improvement"}
 
         Create 3 actionable micro-challenges for each of these exact node IDs:
         calm, vitality, spark, focus, reflection, energy, build, learning, strength,

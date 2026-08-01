@@ -12,6 +12,9 @@ const app = new Hono();
 
 app.use("*", cors());
 
+app.get("/health", (c) => {
+  return c.json({ status: "ok", ts: Date.now() });
+});
 
 app.use(
   "/api/trpc/*", 
@@ -28,14 +31,14 @@ app.get("/", (c) => {
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-// 🔥 This ensures the server is reachable by the emulator
+// This ensures the server is reachable by the emulator
 serve({
   fetch: app.fetch,
   port,
   hostname: "0.0.0.0" 
 }, (info) => {
-  console.log(`\n🚀 SERVER LIVE: http://localhost:${info.port}`);
-  console.log(`📱 ANDROID EMULATOR REACHABLE AT: http://10.0.2.2:${info.port}/api/trpc\n`);
+  console.log(`\nSERVER LIVE: http://localhost:${info.port}`);
+  console.log(`ANDROID EMULATOR REACHABLE AT: http://10.0.2.2:${info.port}/api/trpc\n`);
 });
 
 export default app;
