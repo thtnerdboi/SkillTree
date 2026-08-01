@@ -312,6 +312,11 @@ export default function TreeScreen() {
     return COLUMN_DOMAINS.map((col) => clamp(canvasWidth * COLUMN_XFRAC[col] - width / 2, 0, maxX)).sort((a, b) => a - b);
   }, [canvasWidth, width]);
 
+  // Locked while a programmatic scroll (arrow press / node tap) is in flight so the
+  // native onMomentumScrollEnd handler doesn't immediately re-detect and override it.
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const focusedNodeId = useMemo<string>(() => {
     if (focusedLevel === 0) return "origin";
     const node = findNodeInColumn(focusedColumn, focusedLevel);
@@ -324,6 +329,15 @@ export default function TreeScreen() {
     const node = level === 0 ? undefined : findNodeInColumn(col, level);
     const point = level === 0 ? originPoint : node ? nodePositions[node.id] : undefined;
     if (point) focusPoint(point, animated);
+
+    if (animated) {
+      isProgrammaticScrollRef.current = true;
+      if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
+      // Matches the scrollTo animation duration with margin — release the lock after it settles.
+      programmaticScrollTimeoutRef.current = setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 550);
+    }
   }, [focusPoint, nodePositions, originPoint]);
 
   const focusNodeId = useCallback((nodeId: string, animated: boolean) => {
@@ -337,8 +351,28 @@ export default function TreeScreen() {
     const nextIdx = clamp(idx + direction, 0, COLUMN_DOMAINS.length - 1);
     if (nextIdx === idx) return;
     Haptics.selectionAsync();
-    focusColumnLevel(COLUMN_DOMAINS[nextIdx], Math.max(1, focusedLevel), true);
-  }, [focusedColumn, focusedLevel, focusColumnLevel]);
+    const nextCol = COLUMN_DOMAINS[nextIdx];
+    const level = Math.max(1, focusedLevel);
+    setFocusedColumn(nextCol);
+    setFocusedLevel(level);
+
+    // Scroll to the column's exact native snap-grid offset — never an arbitrary node
+    // pixel position — so the ScrollView can't disagree with what we just set.
+    isProgrammaticScrollRef.current = true;
+    if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
+    horizontalScrollRef.current?.scrollTo({ x: columnSnapOffsets[nextIdx], y: 0, animated: true });
+    const node = findNodeInColumn(nextCol, level);
+    if (node) {
+      const point = nodePositions[node.id];
+      const visibleHeight = Math.max(height - HEADER_HEIGHT - TAB_BAR_OFFSET, 240);
+      const maxY = Math.max(HEADER_HEIGHT + 70 + canvasHeight + MAP_BOTTOM_PADDING - height, 0);
+      const y = clamp(point.y + 70 - visibleHeight / 2, 0, maxY);
+      verticalScrollRef.current?.scrollTo({ x: 0, y, animated: true });
+    }
+    programmaticScrollTimeoutRef.current = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 550);
+  }, [focusedColumn, focusedLevel, columnSnapOffsets, nodePositions, height, canvasHeight]);
 
   const handleVerticalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffsetRef.current = { ...scrollOffsetRef.current, y: event.nativeEvent.contentOffset.y };
@@ -347,6 +381,9 @@ export default function TreeScreen() {
   const handleHorizontalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = event.nativeEvent.contentOffset.x;
     scrollOffsetRef.current = { ...scrollOffsetRef.current, x };
+    // A deliberate arrow-press / node-tap scroll is still settling — don't let this
+    // handler's own column detection fight it and snap back.
+    if (isProgrammaticScrollRef.current) return;
     const centerX = x + width / 2;
     let best: DomainId = "body";
     let bestDist = Infinity;
@@ -381,6 +418,7 @@ export default function TreeScreen() {
     return () => {
       pulse.stop();
       if (openNodeTimeoutRef.current) clearTimeout(openNodeTimeoutRef.current);
+      if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
     };
   }, [pulseAnim]);
 
