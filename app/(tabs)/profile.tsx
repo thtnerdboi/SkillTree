@@ -40,6 +40,7 @@ import {
   ChevronRight,
   Crown,
   Edit2,
+  Flame,
   LogOut,
   Shield,
   Star,
@@ -63,6 +64,14 @@ import { useAppState } from "../../state/app-state";
 import { AdBanner } from "../../components/AdBanner";
 import { ProUpgradeModal } from "../../components/ProUpgradeModal";
 import { useRevenueCat } from "../../lib/revenuecat";
+import {
+  STREAK_MILESTONES,
+  getLast7Days,
+  getDayLabel,
+  getNextMilestone,
+  getStreakReward,
+  todayKey,
+} from "../../utils/streak-helpers";
 
 export default function ProfileScreen() {
   const {
@@ -77,6 +86,10 @@ export default function ProfileScreen() {
     completedNodes,
     completedLevels,
     isNodeComplete,
+    streakCount,
+    longestStreak,
+    streakHistory,
+    streakRewardsClaimed,
   } = useAppState();
 
   const [editingName, setEditingName] = useState<boolean>(false);
@@ -188,6 +201,14 @@ export default function ProfileScreen() {
   const currentPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount);
   const nextPrestige = getPrestigeRank(state.prestigeCount + 1);
   const nextPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount + 1);
+
+  // Streak data
+  const today = todayKey();
+  const last7 = getLast7Days(today);
+  const historySet = new Set(streakHistory);
+  const nextMilestone = getNextMilestone(streakCount);
+  const nextMilestoneReward = nextMilestone !== null ? getStreakReward(nextMilestone) : 0;
+  const streakActive = streakCount > 0;
 
   const domainStats = (["body", "mind", "craft"] as const).map((d) => {
     const domNodes = SKILL_NODES.filter((n) => n.domainId === d);
@@ -317,6 +338,104 @@ export default function ProfileScreen() {
               <Award size={18} color={Colors.light.tint} strokeWidth={2.5} />
               <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{weeklyCompletion}%</Text>
               <Text style={styles.statLabel}>Weekly</Text>
+            </View>
+          </View>
+
+          <View style={[styles.sectionCard, streakActive && { borderColor: "#FF6A4D30" }]}>
+            <View style={styles.streakHeader}>
+              <View style={[
+                styles.streakFlameOrb,
+                { backgroundColor: streakActive ? "#FF6A4D15" : "#1A2238", borderColor: streakActive ? "#FF6A4D40" : "#1A2238" },
+              ]}>
+                <Flame size={22} color={streakActive ? "#FF6A4D" : "#3A4566"} strokeWidth={2.2} />
+              </View>
+              <View style={styles.streakHeaderInfo}>
+                <Text style={styles.sectionTitle}>DAILY STREAK</Text>
+                <Text style={styles.streakHeadline}>
+                  {streakActive ? `${streakCount} day streak` : "No active streak"}
+                </Text>
+                <Text style={styles.streakSubtext}>
+                  {streakActive
+                    ? nextMilestone !== null
+                      ? `${nextMilestone - streakCount} days to +${nextMilestoneReward} XP bonus`
+                      : "All milestones reached — legendary"
+                    : "Complete a challenge today to start"}
+                </Text>
+              </View>
+              <View style={styles.streakCountBadge}>
+                <Text style={[styles.streakCountNum, { color: streakActive ? "#FF6A4D" : "#3A4566" }]}>
+                  {streakCount}
+                </Text>
+                <Text style={styles.streakCountLabel}>CURRENT</Text>
+              </View>
+            </View>
+
+            <View style={styles.streakWeekRow}>
+              {last7.map((dayKey) => {
+                const completed = historySet.has(dayKey);
+                const isToday = dayKey === today;
+                return (
+                  <View key={dayKey} style={styles.streakDayCol}>
+                    <View
+                      style={[
+                        styles.streakDayDot,
+                        completed && styles.streakDayDotFilled,
+                        isToday && styles.streakDayDotToday,
+                      ]}
+                    >
+                      {completed ? (
+                        <CheckCircle size={14} color="#FF6A4D" strokeWidth={2.5} />
+                      ) : null}
+                    </View>
+                    <Text style={[styles.streakDayLabel, isToday && styles.streakDayLabelToday]}>
+                      {getDayLabel(dayKey)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={styles.streakStatsRow}>
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{streakCount}</Text>
+                <Text style={styles.streakStatLabel}>Current</Text>
+              </View>
+              <View style={styles.streakStatDivider} />
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{longestStreak}</Text>
+                <Text style={styles.streakStatLabel}>Longest</Text>
+              </View>
+              <View style={styles.streakStatDivider} />
+              <View style={styles.streakStatItem}>
+                <Text style={styles.streakStatValue}>{streakRewardsClaimed.length}</Text>
+                <Text style={styles.streakStatLabel}>Rewards</Text>
+              </View>
+            </View>
+
+            <View style={styles.streakMilestonesRow}>
+              {STREAK_MILESTONES.map((m) => {
+                const reached = streakCount >= m;
+                const claimed = streakRewardsClaimed.includes(m);
+                const reward = getStreakReward(m);
+                return (
+                  <View
+                    key={m}
+                    style={[
+                      styles.streakMilestoneChip,
+                      reached && styles.streakMilestoneChipReached,
+                      claimed && { borderColor: "#FF6A4D50" },
+                    ]}
+                  >
+                    <Flame size={10} color={reached ? "#FF6A4D" : "#3A4566"} strokeWidth={2.4} />
+                    <Text style={[styles.streakMilestoneText, { color: reached ? "#FF6A4D" : "#3A4566" }]}>
+                      {m}d
+                    </Text>
+                    <Text style={[styles.streakMilestoneReward, { color: reached ? "#FF6A4D" : "#2A3560" }]}>
+                      +{reward}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -547,6 +666,41 @@ const styles = StyleSheet.create({
 
   sectionCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 14, borderWidth: 1, borderColor: "#1A2238" },
   sectionTitle: { fontFamily: "OutfitBold", fontSize: 10, letterSpacing: 2.5, textTransform: "uppercase", color: Colors.light.muted },
+
+  // Streak section
+  streakHeader: { flexDirection: "row", alignItems: "center", gap: 14 },
+  streakFlameOrb: { width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  streakHeaderInfo: { flex: 1, gap: 4 },
+  streakHeadline: { fontSize: 18, fontWeight: "900", color: Colors.light.text },
+  streakSubtext: { fontSize: 12, color: Colors.light.muted, fontWeight: "500" },
+  streakCountBadge: { alignItems: "center" },
+  streakCountNum: { fontSize: 28, fontWeight: "900", lineHeight: 32 },
+  streakCountLabel: { fontSize: 8, letterSpacing: 1.5, color: Colors.light.muted, fontWeight: "700" },
+  streakWeekRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 4 },
+  streakDayCol: { alignItems: "center", gap: 8, flex: 1 },
+  streakDayDot: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "#111828", borderWidth: 1, borderColor: "#1A2238",
+  },
+  streakDayDotFilled: { backgroundColor: "#FF6A4D15", borderColor: "#FF6A4D40" },
+  streakDayDotToday: { borderWidth: 2, borderColor: "#FF6A4D60" },
+  streakDayLabel: { fontSize: 10, fontWeight: "700", color: "#3A4566" },
+  streakDayLabelToday: { color: "#FF6A4D" },
+  streakStatsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", paddingVertical: 8 },
+  streakStatItem: { alignItems: "center", gap: 4 },
+  streakStatValue: { fontSize: 22, fontWeight: "900", color: Colors.light.text },
+  streakStatLabel: { fontSize: 10, color: Colors.light.muted, fontWeight: "700" },
+  streakStatDivider: { width: 1, height: 28, backgroundColor: "#1A2238" },
+  streakMilestonesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  streakMilestoneChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12,
+    backgroundColor: "#080B14", borderWidth: 1, borderColor: "#1A2238",
+  },
+  streakMilestoneChipReached: { backgroundColor: "#FF6A4D0D" },
+  streakMilestoneText: { fontSize: 11, fontWeight: "800" },
+  streakMilestoneReward: { fontSize: 10, fontWeight: "700", marginLeft: 2 },
 
   domainRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   domainDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },

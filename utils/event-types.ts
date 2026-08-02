@@ -23,6 +23,10 @@ export const ANALYTICS_EVENTS = {
 
   AD_REWARD_CLAIMED: "ad_reward_claimed",
 
+  STREAK_EXTENDED: "streak_extended",
+  STREAK_BROKEN: "streak_broken",
+  STREAK_MILESTONE: "streak_milestone",
+
   APP_ERROR: "app_error",
 } as const;
 

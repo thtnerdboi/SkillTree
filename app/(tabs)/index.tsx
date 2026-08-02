@@ -194,7 +194,7 @@ function NodeBubble({ node, point, unlocked, complete, hasProgress, focused, onP
 
 export default function TreeScreen() {
   const { width, height } = useWindowDimensions();
-  const { state, signIn, completeOnboarding, isNodeComplete, isNodeUnlocked, completedChallenges, totalChallenges } = useAppState();
+  const { state, signIn, completeOnboarding, isNodeComplete, isNodeUnlocked, completedChallenges, totalChallenges, streakCount } = useAppState();
 
   // Real AI challenge generation via tRPC/Gemini backend
   const generateTreeMutation = trpc.ai.generateTree.useMutation();
@@ -501,6 +501,16 @@ export default function TreeScreen() {
                 <Text style={styles.headerStatLabel}>LEVEL</Text>
               </View>
               <View style={styles.headerDivider} />
+              <View style={[
+                styles.streakPill,
+                { borderColor: streakCount > 0 ? alpha("#FF6A4D", "40") : "rgba(255,255,255,0.06)",
+                  backgroundColor: streakCount > 0 ? alpha("#FF6A4D", "12") : "transparent" },
+              ]}>
+                <Flame size={12} color={streakCount > 0 ? "#FF6A4D" : "#4A5680"} strokeWidth={2.2} />
+                <Text style={[styles.streakPillText, { color: streakCount > 0 ? "#FF6A4D" : "#4A5680" }]}>
+                  {streakCount}
+                </Text>
+              </View>
               <View style={styles.headerStats}>
                 <Text style={styles.headerStatValue}>{completedChallenges}<Text style={styles.headerStatMuted}>/{totalChallenges}</Text></Text>
                 <Text style={styles.headerStatLabel}>DONE</Text>
@@ -674,6 +684,8 @@ const styles = StyleSheet.create({
   headerStatMuted: { color: "#5A6B92", fontWeight: "700" },
   headerStatLabel: { fontSize: 8, letterSpacing: 1.5, color: "#4A5680", fontWeight: "700" },
   headerDivider: { width: 1, height: 28, backgroundColor: "rgba(93,225,255,0.12)" },
+  streakPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+  streakPillText: { fontSize: 13, fontWeight: "900" },
   xpBarContainer: { marginTop: 8, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 16, backgroundColor: "rgba(8,14,28,0.6)", borderWidth: 1, borderColor: "rgba(93,225,255,0.08)", gap: 6 },
   xpBarTrack: { height: 5, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 999, overflow: "hidden" },
   xpBarFill: { height: "100%", backgroundColor: NEON_CYAN, borderRadius: 999, shadowColor: NEON_CYAN, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },

@@ -16,6 +16,11 @@ import {
   getUserLevelFromXp,
 } from "../utils/xp-calculator";
 import {
+  computeStreakUpdate,
+  checkStreakBreak,
+  todayKey,
+} from "../utils/streak-helpers";
+import {
   Challenge,
   SKILL_NODES,
   TREE_LEVELS,
@@ -53,6 +58,11 @@ export type StoredState = {
   isPro: boolean;
   aiGenerations: number;
   lastAiGenTime: Record<string, number>;
+  streakCount: number;
+  longestStreak: number;
+  lastStreakDate: string | null;
+  streakHistory: string[];
+  streakRewardsClaimed: number[];
 };
 
 const STORAGE_KEY = "skilltree-state-v1";
@@ -74,6 +84,11 @@ const createDefaultState = (): StoredState => ({
   isPro: false,
   aiGenerations: 0,
   lastAiGenTime: {},
+  streakCount: 0,
+  longestStreak: 0,
+  lastStreakDate: null,
+  streakHistory: [],
+  streakRewardsClaimed: [],
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
@@ -143,6 +158,11 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         prestigeCount: storedQuery.data.prestigeCount ?? 0,
         isPro: storedQuery.data.isPro ?? false,
         aiGenerations: storedQuery.data.aiGenerations ?? 0,
+        streakCount: storedQuery.data.streakCount ?? 0,
+        longestStreak: storedQuery.data.longestStreak ?? 0,
+        lastStreakDate: storedQuery.data.lastStreakDate ?? null,
+        streakHistory: storedQuery.data.streakHistory ?? [],
+        streakRewardsClaimed: storedQuery.data.streakRewardsClaimed ?? [],
       };
       setState(hydrated);
       if (hydrated.isAuthed && hydrated.userId) {
@@ -294,10 +314,62 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
           });
         }
 
+        // --- Streak tracking: only on completion (not un-completion) ---
+        let streakXpBonus = 0;
+        let newStreakCount = current.streakCount;
+        let newLongestStreak = current.longestStreak;
+        let newLastStreakDate = current.lastStreakDate;
+        let newStreakHistory = current.streakHistory;
+        let newStreakRewardsClaimed = current.streakRewardsClaimed;
+
+        if (!currentlyCompleted) {
+          const today = todayKey();
+          const streakUpdate = computeStreakUpdate({
+            currentStreak: current.streakCount,
+            longestStreak: current.longestStreak,
+            lastStreakDate: current.lastStreakDate,
+            streakHistory: current.streakHistory,
+            completedDateKey: today,
+          });
+
+          newStreakCount = streakUpdate.streakCount;
+          newLongestStreak = streakUpdate.longestStreak;
+          newLastStreakDate = streakUpdate.lastStreakDate;
+          newStreakHistory = streakUpdate.streakHistory;
+          streakXpBonus = streakUpdate.rewardXp;
+
+          if (streakUpdate.streakCount > current.streakCount) {
+            analytics.track(ANALYTICS_EVENTS.STREAK_EXTENDED, {
+              streakCount: streakUpdate.streakCount,
+            });
+          }
+
+          if (streakUpdate.milestoneReached !== null) {
+            const milestone = streakUpdate.milestoneReached;
+            if (!current.streakRewardsClaimed.includes(milestone)) {
+              newStreakRewardsClaimed = [...current.streakRewardsClaimed, milestone];
+              analytics.track(ANALYTICS_EVENTS.STREAK_MILESTONE, {
+                milestone,
+                rewardXp: streakXpBonus,
+              });
+              console.log("[state] Streak milestone reached!", milestone, "XP:", streakXpBonus);
+            } else {
+              streakXpBonus = 0;
+            }
+          }
+        }
+
+        const totalXpDelta = finalXpDelta + (streakXpBonus > 0 ? Math.round(streakXpBonus * finalMultiplier) : 0);
+
         return {
           ...current,
           challengeProgress: newProgress,
-          xp: Math.max(0, current.xp + finalXpDelta),
+          xp: Math.max(0, current.xp + totalXpDelta),
+          streakCount: newStreakCount,
+          longestStreak: newLongestStreak,
+          lastStreakDate: newLastStreakDate,
+          streakHistory: newStreakHistory,
+          streakRewardsClaimed: newStreakRewardsClaimed,
         };
       });
 
@@ -392,6 +464,9 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       challengeProgress: {},
       aiChallenges: {},
       lastResetAt: Date.now(),
+      streakCount: 0,
+      streakHistory: [],
+      streakRewardsClaimed: [],
     }));
   }, [updateState, state.prestigeCount]);
 
@@ -496,6 +571,22 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     ).length;
   }, [state.challengeProgress, state.aiChallenges]);
 
+  // Check for streak break on app open / state hydration
+  useEffect(() => {
+    if (!state.isAuthed || !state.onboardingComplete) return;
+    if (state.lastStreakDate === null) return;
+    const brokenStreak = checkStreakBreak(state.lastStreakDate, todayKey());
+    if (brokenStreak !== null && state.streakCount > 0) {
+      console.log("[state] Streak broken! Was:", state.streakCount);
+      analytics.track(ANALYTICS_EVENTS.STREAK_BROKEN, { wasStreak: state.streakCount });
+      updateState((current) => ({
+        ...current,
+        streakCount: 0,
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isAuthed, state.onboardingComplete, state.lastStreakDate]);
+
   const completedLevels = useMemo(() => {
     return TREE_LEVELS.filter((l) => {
       const nodes = getNodesForLevel(l.number);
@@ -551,6 +642,11 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       completedNodes,
       completedLevels,
       leaderboard,
+      streakCount: state.streakCount,
+      longestStreak: state.longestStreak,
+      lastStreakDate: state.lastStreakDate,
+      streakHistory: state.streakHistory,
+      streakRewardsClaimed: state.streakRewardsClaimed,
     }),
     [
       state,
