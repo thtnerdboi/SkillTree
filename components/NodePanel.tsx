@@ -30,15 +30,17 @@ type Props = {
   onClose: () => void;
   iconMap: Record<string, IconComponent>;
   flashXP: (amount: number) => void;
+  onNodeComplete?: (nodeId: string) => void;
 };
 
 function alpha(hexColor: string, value: string): string {
   return `${hexColor}${value}`;
 }
 
-export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
+export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: Props) {
   const { state, toggleChallenge, isNodeComplete, isNodeUnlocked, setAiChallenges, recordAiGeneration } = useAppState();
   const [goalInput, setGoalInput] = useState<string>("");
+  const [justCompleted, setJustCompleted] = useState(false);
 
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(new Animated.Value(40)).current;
@@ -83,8 +85,14 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
         duration: 180,
         useNativeDriver: true,
       }),
-    ]).start(() => onClose());
-  }, [cardScale, cardTranslate, onClose, overlayOpacity]);
+    ]).start(() => {
+      if (justCompleted) {
+        onNodeComplete?.(node.id);
+      }
+      setJustCompleted(false);
+      onClose();
+    });
+  }, [cardScale, cardTranslate, node.id, onClose, onNodeComplete, overlayOpacity, justCompleted]);
 
   const regenerateNodeMutation = trpc.ai.regenerateNode.useMutation({
     onSuccess: (challenges) => {
@@ -137,6 +145,12 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
   const nodeColor = DOMAIN_COLOR[node.domainId];
   const nodeUnlocked = isNodeUnlocked(node.id);
   const nodeComplete = isNodeComplete(node.id);
+
+  useEffect(() => {
+    if (!nodeComplete && justCompleted) {
+      setJustCompleted(false);
+    }
+  }, [nodeComplete, justCompleted]);
   const hasAiChallenges = (state.aiChallenges[node.id] ?? []).length > 0;
   const activeChallenges = useMemo(() => {
     const customChallenges = state.aiChallenges[node.id] ?? [];
@@ -296,6 +310,9 @@ export function NodePanel({ node, onClose, iconMap, flashXP }: Props) {
                           if (!done) {
                             flashXP(challenge.xp);
                             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            if (nodeProgress + 1 === activeChallenges.length) {
+                              setJustCompleted(true);
+                            }
                           } else {
                             await Haptics.selectionAsync();
                           }

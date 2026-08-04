@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -50,15 +51,16 @@ const LEVEL_SPACING = 320;
 const ORIGIN_BOTTOM_PADDING = 280;
 const ORIGIN_SIZE = 120;
 const NODE_SIZE = 108;
-const NODE_GLOW_SIZE = 200;
+const NODE_GLOW_SIZE = 172;
 const HEADER_HEIGHT = 76;
 const TAB_BAR_OFFSET = 96;
 const MAP_BOTTOM_PADDING = 200;
 const LINE_GLOW_WIDTH = 18;
 const LINE_CORE_WIDTH = 7;
-const LABEL_PILL_WIDTH = 140;
+const LABEL_PILL_WIDTH = 128;
 const APP_BACKGROUND = "#050811";
 const GRID_COLOR = "rgba(93,225,255,0.04)";
+const ENERGY_SIZE = 20;
 const NEON_CYAN = "#5DE1FF";
 
 function alpha(hexColor: string, value: string): string { return `${hexColor}${value}`; }
@@ -192,6 +194,78 @@ function NodeBubble({ node, point, unlocked, complete, hasProgress, focused, onP
   );
 }
 
+function EnergyDot({
+  from,
+  to,
+  color,
+  onFinished,
+}: {
+  from: TreePoint;
+  to: TreePoint;
+  color: string;
+  onFinished: () => void;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    progress.setValue(0);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const anim = Animated.timing(progress, {
+      toValue: 1,
+      duration: 900,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => {
+      if (finished) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onFinished();
+      }
+    });
+    return () => anim.stop();
+  }, [from, to, color, onFinished, progress]);
+
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, to.x - from.x] });
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [0, to.y - from.y] });
+  const scale = progress.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 1.3, 1] });
+  const opacity = progress.interpolate({ inputRange: [0, 0.08, 0.92, 1], outputRange: [0, 1, 1, 0.6] });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: from.x - ENERGY_SIZE / 2,
+        top: from.y - ENERGY_SIZE / 2,
+        width: ENERGY_SIZE,
+        height: ENERGY_SIZE,
+        borderRadius: ENERGY_SIZE / 2,
+        backgroundColor: color,
+        shadowColor: color,
+        shadowOpacity: 0.8,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 20,
+        opacity,
+        transform: [{ translateX }, { translateY }, { scale }],
+        zIndex: 10,
+      }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          top: -ENERGY_SIZE / 2,
+          left: -ENERGY_SIZE / 2,
+          width: ENERGY_SIZE * 2,
+          height: ENERGY_SIZE * 2,
+          borderRadius: ENERGY_SIZE,
+          backgroundColor: alpha(color, "20"),
+        }}
+      />
+    </Animated.View>
+  );
+}
+
 export default function TreeScreen() {
   const { width, height } = useWindowDimensions();
   const { state, signIn, completeOnboarding, isNodeComplete, isNodeUnlocked, completedChallenges, totalChallenges, streakCount } = useAppState();
@@ -218,6 +292,9 @@ export default function TreeScreen() {
   const [focusedColumn, setFocusedColumn] = useState<DomainId>("body");
   const [focusedLevel, setFocusedLevel] = useState<number>(0);
   const [mapScale] = useState<number>(1);
+  const [energyTravel, setEnergyTravel] = useState<{ fromId: string; toId: string; color: string } | null>(null);
+  const introAnim = useRef(new Animated.Value(0)).current;
+  const hasStartedIntro = useRef(false);
 
   const flashXP = useCallback((amount: number) => {
     setXpGained(amount);
@@ -283,7 +360,10 @@ export default function TreeScreen() {
     const maxX = Math.max(canvasWidth - width, 0);
     const maxY = Math.max(HEADER_HEIGHT + 70 + canvasHeight + MAP_BOTTOM_PADDING - height, 0);
     const x = clamp(point.x - width / 2, 0, maxX);
-    const y = clamp(point.y + 70 - visibleHeight / 2, 0, maxY);
+    // paddingTop on the vertical ScrollView is already HEADER_HEIGHT + 70, which cancels
+    // out against the header offset here — adding +70 again double-counts it and pushes
+    // every centered view further down than intended (node ends up above center).
+    const y = clamp(point.y - visibleHeight / 2, 0, maxY);
     horizontalScrollRef.current?.scrollTo({ x, y: 0, animated });
     verticalScrollRef.current?.scrollTo({ x: 0, y, animated });
     scrollOffsetRef.current = { x, y };
@@ -366,7 +446,7 @@ export default function TreeScreen() {
       const point = nodePositions[node.id];
       const visibleHeight = Math.max(height - HEADER_HEIGHT - TAB_BAR_OFFSET, 240);
       const maxY = Math.max(HEADER_HEIGHT + 70 + canvasHeight + MAP_BOTTOM_PADDING - height, 0);
-      const y = clamp(point.y + 70 - visibleHeight / 2, 0, maxY);
+      const y = clamp(point.y - visibleHeight / 2, 0, maxY);
       verticalScrollRef.current?.scrollTo({ x: 0, y, animated: true });
     }
     programmaticScrollTimeoutRef.current = setTimeout(() => {
@@ -374,9 +454,38 @@ export default function TreeScreen() {
     }, 550);
   }, [focusedColumn, focusedLevel, columnSnapOffsets, nodePositions, height, canvasHeight]);
 
+  const onNodeComplete = useCallback((nodeId: string) => {
+    const node = SKILL_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    const child = findNodeInColumn(node.domainId, node.levelNumber + 1);
+    if (child) {
+      setEnergyTravel({ fromId: nodeId, toId: child.id, color: DOMAIN_COLOR[node.domainId] });
+    }
+  }, [setEnergyTravel]);
+
   const handleVerticalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollOffsetRef.current = { ...scrollOffsetRef.current, y: event.nativeEvent.contentOffset.y };
-  }, []);
+    const y = event.nativeEvent.contentOffset.y;
+    scrollOffsetRef.current = { ...scrollOffsetRef.current, y };
+    if (isProgrammaticScrollRef.current) return;
+
+    // Lock focus to the nearest level in the current column, same effect as the
+    // horizontal column snap — keeps labels/highlighting in sync with manual scrolling.
+    const visibleHeight = Math.max(height - HEADER_HEIGHT - TAB_BAR_OFFSET, 240);
+    const paddingTop = HEADER_HEIGHT + 70;
+    const centerYCanvas = y + visibleHeight / 2 - paddingTop;
+
+    let bestLevel = 0;
+    let bestDist = Infinity;
+    for (let lvl = 0; lvl <= maxTreeLevel; lvl++) {
+      const nodeY = lvl === 0 ? originY : originY - lvl * LEVEL_SPACING * mapScale;
+      const d = Math.abs(centerYCanvas - nodeY);
+      if (d < bestDist) { bestDist = d; bestLevel = lvl; }
+    }
+    if (bestLevel !== focusedLevel) {
+      Haptics.selectionAsync();
+      setFocusedLevel(bestLevel);
+    }
+  }, [height, maxTreeLevel, originY, mapScale, focusedLevel]);
 
   const handleHorizontalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = event.nativeEvent.contentOffset.x;
@@ -421,6 +530,17 @@ export default function TreeScreen() {
       if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
     };
   }, [pulseAnim]);
+
+  // Intro formation animation — tree coalesces from a compact cluster into the clean layout
+  useEffect(() => {
+    if (!canvasReady || hasStartedIntro.current) return;
+    hasStartedIntro.current = true;
+    introAnim.setValue(0);
+    Animated.sequence([
+      Animated.delay(200),
+      Animated.spring(introAnim, { toValue: 1, tension: 58, friction: 10, useNativeDriver: true }),
+    ]).start();
+  }, [canvasReady, introAnim]);
 
   // Auth screen
   if (!state.isAuthed) {
@@ -549,8 +669,24 @@ export default function TreeScreen() {
             snapToOffsets={columnSnapOffsets} decelerationRate="fast" directionalLockEnabled={true}
             nestedScrollEnabled={true} showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={handleHorizontalScrollEnd} onScrollEndDrag={handleHorizontalScrollEnd}
-            contentContainerStyle={styles.horizontalScrollContent} testID="tree-horizontal-scroll">
+            contentContainerStyle={{ width: canvasWidth }} testID="tree-horizontal-scroll">
             <View style={{ width: canvasWidth, height: canvasHeight }}>
+              <Animated.View
+                style={[
+                  { width: canvasWidth, height: canvasHeight },
+                  {
+                    opacity: introAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 0.8, 1] }),
+                    transform: [
+                      { translateX: canvasWidth / 2 },
+                      { translateY: canvasHeight / 2 },
+                      { scale: introAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) },
+                      { translateX: -canvasWidth / 2 },
+                      { translateY: -canvasHeight / 2 },
+                    ],
+                  },
+                  { overflow: "visible" },
+                ]}
+              >
               <GridBackground width={canvasWidth} height={canvasHeight} />
               <Svg width={canvasWidth} height={canvasHeight} style={StyleSheet.absoluteFillObject} pointerEvents="none">
                 <Defs>
@@ -628,6 +764,15 @@ export default function TreeScreen() {
                     }} />
                 );
               })}
+              </Animated.View>
+              {energyTravel ? (
+                <EnergyDot
+                  from={energyTravel.fromId === "origin" ? originPoint : (nodePositions[energyTravel.fromId] ?? originPoint)}
+                  to={nodePositions[energyTravel.toId] ?? originPoint}
+                  color={energyTravel.color}
+                  onFinished={() => setEnergyTravel(null)}
+                />
+              ) : null}
             </View>
           </ScrollView>
         </ScrollView>
@@ -649,7 +794,7 @@ export default function TreeScreen() {
           </>
         ) : null}
 
-        {selectedNode ? <NodePanel node={selectedNode} onClose={() => setSelectedNode(null)} iconMap={ICON_MAP} flashXP={flashXP} /> : null}
+        {selectedNode ? <NodePanel node={selectedNode} onClose={() => setSelectedNode(null)} iconMap={ICON_MAP} flashXP={flashXP} onNodeComplete={onNodeComplete} /> : null}
         <PrestigeModal />
       </SafeAreaView>
     </View>
@@ -703,8 +848,8 @@ const styles = StyleSheet.create({
   originNodeInner: { width: ORIGIN_SIZE - 20, height: ORIGIN_SIZE - 20, borderRadius: (ORIGIN_SIZE - 20) / 2, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.03)", borderWidth: 1, borderColor: alpha(NEON_CYAN, "20") },
   nodeWrap: { position: "absolute", width: NODE_GLOW_SIZE, height: NODE_GLOW_SIZE, alignItems: "center", justifyContent: "center", zIndex: 4 },
   glowOuter: { position: "absolute", width: NODE_GLOW_SIZE, height: NODE_GLOW_SIZE, borderRadius: NODE_GLOW_SIZE / 2 },
-  glowMid: { position: "absolute", width: 150, height: 150, borderRadius: 75 },
-  glowInner: { position: "absolute", width: 130, height: 130, borderRadius: 65, borderWidth: 1, backgroundColor: "transparent" },
+  glowMid: { position: "absolute", width: 128, height: 128, borderRadius: 64 },
+  glowInner: { position: "absolute", width: 110, height: 110, borderRadius: 55, borderWidth: 1, backgroundColor: "transparent" },
   focusRing: { position: "absolute", width: NODE_GLOW_SIZE - 10, height: NODE_GLOW_SIZE - 10, borderRadius: (NODE_GLOW_SIZE - 10) / 2, borderWidth: 1.5, borderStyle: "dashed" },
   nodeCore: { alignItems: "center", justifyContent: "center", borderWidth: 2, overflow: "hidden" },
   nodeInnerRing: { position: "absolute", top: 8, bottom: 8, left: 8, right: 8, borderRadius: 999, borderWidth: 1 },
