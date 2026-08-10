@@ -28,6 +28,7 @@ import {
   getPrestigeRank,
   getPrestigeXpMultiplier,
 } from "../mocks/mvp-data";
+import type { FitnessLogEntry } from "../utils/fitness-verify";
 
 export type OnboardingAnswers = {
   body: string;
@@ -63,6 +64,10 @@ export type StoredState = {
   lastStreakDate: string | null;
   streakHistory: string[];
   streakRewardsClaimed: number[];
+  /** Fitness log entries keyed by date (YYYY-MM-DD) */
+  fitnessLogs: Record<string, FitnessLogEntry>;
+  /** Focus sessions completed: challengeId -> completion timestamp */
+  focusSessionsCompleted: Record<string, number>;
 };
 
 const STORAGE_KEY = "skilltree-state-v1";
@@ -89,6 +94,8 @@ const createDefaultState = (): StoredState => ({
   lastStreakDate: null,
   streakHistory: [],
   streakRewardsClaimed: [],
+  fitnessLogs: {},
+  focusSessionsCompleted: {},
 });
 
 export const [AppStateProvider, useAppState] = createContextHook(() => {
@@ -163,6 +170,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
         lastStreakDate: storedQuery.data.lastStreakDate ?? null,
         streakHistory: storedQuery.data.streakHistory ?? [],
         streakRewardsClaimed: storedQuery.data.streakRewardsClaimed ?? [],
+        fitnessLogs: storedQuery.data.fitnessLogs ?? {},
+        focusSessionsCompleted: storedQuery.data.focusSessionsCompleted ?? {},
       };
       setState(hydrated);
       if (hydrated.isAuthed && hydrated.userId) {
@@ -467,6 +476,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       streakCount: 0,
       streakHistory: [],
       streakRewardsClaimed: [],
+      fitnessLogs: {},
+      focusSessionsCompleted: {},
     }));
   }, [updateState, state.prestigeCount]);
 
@@ -474,6 +485,37 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
     analytics.track(ANALYTICS_EVENTS.PRESTIGE_DISMISSED);
     setPrestigeReady(false);
   }, []);
+
+  const logFitness = useCallback(
+    (entry: FitnessLogEntry) => {
+      console.log("[state] Log fitness:", entry);
+      const dateKey = entry.loggedAt.slice(0, 10);
+      analytics.track(ANALYTICS_EVENTS.FITNESS_LOGGED, { dateKey, ...entry });
+      updateState((current) => ({
+        ...current,
+        fitnessLogs: {
+          ...current.fitnessLogs,
+          [dateKey]: entry,
+        },
+      }));
+    },
+    [updateState]
+  );
+
+  const recordFocusSession = useCallback(
+    (challengeId: string) => {
+      console.log("[state] Focus session completed:", challengeId);
+      analytics.track(ANALYTICS_EVENTS.FOCUS_SESSION_COMPLETED, { challengeId });
+      updateState((current) => ({
+        ...current,
+        focusSessionsCompleted: {
+          ...current.focusSessionsCompleted,
+          [challengeId]: Date.now(),
+        },
+      }));
+    },
+    [updateState]
+  );
 
   const addBonusXp = useCallback(
     (amount: number) => {
@@ -647,6 +689,10 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       lastStreakDate: state.lastStreakDate,
       streakHistory: state.streakHistory,
       streakRewardsClaimed: state.streakRewardsClaimed,
+      fitnessLogs: state.fitnessLogs,
+      focusSessionsCompleted: state.focusSessionsCompleted,
+      logFitness,
+      recordFocusSession,
     }),
     [
       state,
@@ -677,6 +723,8 @@ export const [AppStateProvider, useAppState] = createContextHook(() => {
       completedNodes,
       completedLevels,
       leaderboard,
+      logFitness,
+      recordFocusSession,
     ]
   );
 });

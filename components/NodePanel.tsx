@@ -17,11 +17,19 @@ import {
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { Check, Lock, X, Zap, Sparkles } from "lucide-react-native";
+import { Check, Lock, X, Zap, Sparkles, Activity, Clock, Pin, Timer } from "lucide-react-native";
 import { trpc } from "@/lib/trpc";
 import Colors from "@/constants/colors";
 import { DOMAIN_COLOR, DOMAIN_LABEL, SKILL_NODES } from "@/mocks/mvp-data";
 import { useAppState } from "@/state/app-state";
+import { FocusSessionModal } from "@/components/FocusSessionModal";
+import {
+  isFitnessChallengeVerified,
+  getFitnessMetricLabel,
+  formatFitnessValue,
+  type FitnessLogEntry,
+} from "@/utils/fitness-verify";
+import { todayKey } from "@/utils/streak-helpers";
 
 type IconComponent = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 
@@ -38,9 +46,14 @@ function alpha(hexColor: string, value: string): string {
 }
 
 export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: Props) {
-  const { state, toggleChallenge, isNodeComplete, isNodeUnlocked, setAiChallenges, recordAiGeneration } = useAppState();
+  const { state, toggleChallenge, isNodeComplete, isNodeUnlocked, setAiChallenges, recordAiGeneration, logFitness, recordFocusSession } = useAppState();
   const [goalInput, setGoalInput] = useState<string>("");
   const [justCompleted, setJustCompleted] = useState(false);
+  const [focusChallenge, setFocusChallenge] = useState<typeof node.defaultChallenges[0] | null>(null);
+  const [showFitnessForm, setShowFitnessForm] = useState<string | null>(null);
+  const [fitnessSteps, setFitnessSteps] = useState<string>("");
+  const [fitnessMinutes, setFitnessMinutes] = useState<string>("");
+  const [fitnessDistance, setFitnessDistance] = useState<string>("");
 
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(new Animated.Value(40)).current;
@@ -96,14 +109,18 @@ export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: P
 
   const regenerateNodeMutation = trpc.ai.regenerateNode.useMutation({
     onSuccess: (challenges) => {
-      const withIds = challenges.map((c, i) => ({
+      const fixed = node.defaultChallenges.filter((c) => c.isFixed);
+      const replaceableCount = node.defaultChallenges.length - fixed.length;
+      const aiGenerated = challenges.slice(0, replaceableCount).map((c, i) => ({
         id: `ai-${node.id}-${i}-${Date.now()}`,
         nodeId: node.id,
         title: c.title,
         detail: c.detail,
         xp: c.xp,
+        type: "manual" as const,
       }));
-      setAiChallenges(node.id, withIds);
+      // Fixed challenges are always preserved and prepended — AI cannot replace them
+      setAiChallenges(node.id, [...fixed, ...aiGenerated]);
       setGoalInput("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
@@ -300,57 +317,199 @@ export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: P
 
                   {activeChallenges.map((challenge) => {
                     const done = state.challengeProgress[challenge.id] ?? false;
+                    const challengeType = challenge.type ?? "manual";
+                    const isFixed = challenge.isFixed === true;
+                    const todayFitnessLog = state.fitnessLogs[todayKey()];
+                    const fitnessVerified = challengeType === "fitness"
+                      ? isFitnessChallengeVerified(challenge, todayFitnessLog)
+                      : false;
+                    const focusCompleted = challengeType === "focus"
+                      ? state.focusSessionsCompleted[challenge.id] !== undefined
+                      : false;
+                    const isVerified = fitnessVerified || focusCompleted;
+
+                    const handleChallengePress = async () => {
+                      if (!nodeUnlocked) return;
+
+                      if (challengeType === "focus" && !done) {
+                        setFocusChallenge(challenge);
+                        await Haptics.selectionAsync();
+                        return;
+                      }
+
+                      if (challengeType === "fitness" && !done) {
+                        setShowFitnessForm(showFitnessForm === challenge.id ? null : challenge.id);
+                        await Haptics.selectionAsync();
+                        return;
+                      }
+
+                      toggleChallenge(challenge.id, node.id, challenge.xp);
+                      if (!done) {
+                        flashXP(challenge.xp);
+                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        if (nodeProgress + 1 === activeChallenges.length) {
+                          setJustCompleted(true);
+                        }
+                      } else {
+                        await Haptics.selectionAsync();
+                      }
+                    };
 
                     return (
-                      <Pressable
-                        key={challenge.id}
-                        onPress={async () => {
-                          if (!nodeUnlocked) return;
-                          toggleChallenge(challenge.id, node.id, challenge.xp);
-                          if (!done) {
-                            flashXP(challenge.xp);
-                            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            if (nodeProgress + 1 === activeChallenges.length) {
-                              setJustCompleted(true);
-                            }
-                          } else {
-                            await Haptics.selectionAsync();
-                          }
-                        }}
-                        testID={`challenge-${challenge.id}`}
-                        style={({ pressed }) => [styles.challengeCardWrap, pressed && styles.challengeCardPressed]}
-                      >
-                        <BlurView tint="dark" intensity={60} style={[styles.challengeCard, !nodeUnlocked && styles.challengeLocked]}>
-                          <View style={styles.challengeLeft}>
-                            <View
-                              style={[
-                                styles.checkOrb,
-                                {
-                                  borderColor: done ? nodeColor : alpha(nodeColor, "40"),
-                                  backgroundColor: done ? nodeColor : alpha(nodeColor, "14"),
-                                },
+                      <View key={challenge.id}>
+                        <Pressable
+                          onPress={handleChallengePress}
+                          testID={`challenge-${challenge.id}`}
+                          style={({ pressed }) => [styles.challengeCardWrap, pressed && styles.challengeCardPressed]}
+                        >
+                          <BlurView tint="dark" intensity={60} style={[styles.challengeCard, !nodeUnlocked && styles.challengeLocked]}>
+                            <View style={styles.challengeLeft}>
+                              <View
+                                style={[
+                                  styles.checkOrb,
+                                  {
+                                    borderColor: done ? nodeColor : alpha(nodeColor, "40"),
+                                    backgroundColor: done ? nodeColor : alpha(nodeColor, "14"),
+                                  },
+                                ]}
+                              >
+                                {done ? (
+                                  <Check size={12} color="#02050C" strokeWidth={3} />
+                                ) : !nodeUnlocked ? (
+                                  <Lock size={12} color={Colors.light.muted} strokeWidth={2.4} />
+                                ) : null}
+                              </View>
+                              <View style={styles.challengeTextBlock}>
+                                <View style={styles.challengeTitleRow}>
+                                  <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
+                                  {isFixed ? (
+                                    <View style={styles.fixedBadge}>
+                                      <Pin size={8} color={nodeColor} strokeWidth={2.5} />
+                                      <Text style={[styles.fixedBadgeText, { color: nodeColor }]}>FIXED</Text>
+                                    </View>
+                                  ) : null}
+                                  {isVerified && !done ? (
+                                    <View style={[styles.verifiedBadge, { borderColor: alpha(nodeColor, "40"), backgroundColor: alpha(nodeColor, "14") }]}>
+                                      <Check size={8} color={nodeColor} strokeWidth={3} />
+                                      <Text style={[styles.verifiedBadgeText, { color: nodeColor }]}>VERIFIED</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                                <Text style={styles.challengeDetail}>{challenge.detail}</Text>
+                                {challengeType === "focus" && challenge.focusDuration ? (
+                                  <View style={styles.typeTagRow}>
+                                    <Clock size={10} color={nodeColor} strokeWidth={2.2} />
+                                    <Text style={[styles.typeTagText, { color: nodeColor }]}>{challenge.focusDuration} min focus session</Text>
+                                  </View>
+                                ) : null}
+                                {challengeType === "fitness" && challenge.fitnessMetric && challenge.fitnessThreshold ? (
+                                  <View style={styles.typeTagRow}>
+                                    <Activity size={10} color={nodeColor} strokeWidth={2.2} />
+                                    <Text style={[styles.typeTagText, { color: nodeColor }]}>
+                                      {getFitnessMetricLabel(challenge.fitnessMetric)}: {formatFitnessValue(challenge.fitnessMetric, challenge.fitnessThreshold)}
+                                      {fitnessVerified ? " ✓" : ""}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            </View>
+
+                            <View style={styles.challengeRight}>
+                              {challengeType === "focus" && !done ? (
+                                <View style={[styles.actionPill, { borderColor: alpha(nodeColor, "40"), backgroundColor: alpha(nodeColor, "18") }]}>
+                                  <Timer size={10} color={nodeColor} strokeWidth={2.5} />
+                                  <Text style={[styles.actionPillText, { color: nodeColor }]}>Start</Text>
+                                </View>
+                              ) : challengeType === "fitness" && !done ? (
+                                <View style={[styles.actionPill, { borderColor: alpha(nodeColor, "40"), backgroundColor: alpha(nodeColor, "18") }]}>
+                                  <Activity size={10} color={nodeColor} strokeWidth={2.5} />
+                                  <Text style={[styles.actionPillText, { color: nodeColor }]}>Log</Text>
+                                </View>
+                              ) : (
+                                <View style={[styles.xpPill, { borderColor: alpha(nodeColor, "30"), backgroundColor: alpha(nodeColor, "14") }]}>
+                                  <Zap size={10} color={nodeColor} strokeWidth={2.5} />
+                                  <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
+                                </View>
+                              )}
+                            </View>
+                          </BlurView>
+                        </Pressable>
+
+                        {showFitnessForm === challenge.id && challengeType === "fitness" && !done ? (
+                          <View style={[styles.fitnessForm, { borderColor: alpha(nodeColor, "24") }]}>
+                            <Text style={styles.fitnessFormLabel}>LOG TODAY&apos;S ACTIVITY</Text>
+                            <Text style={styles.fitnessFormHint}>
+                              Enter your {getFitnessMetricLabel(challenge.fitnessMetric ?? "steps").toLowerCase()} from your phone or watch health app.
+                            </Text>
+                            {challenge.fitnessMetric === "steps" ? (
+                              <TextInput
+                                style={styles.fitnessInput}
+                                value={fitnessSteps}
+                                onChangeText={setFitnessSteps}
+                                placeholder="e.g. 5200"
+                                placeholderTextColor="#4A5680"
+                                keyboardType="numeric"
+                              />
+                            ) : null}
+                            {challenge.fitnessMetric === "activeMinutes" ? (
+                              <TextInput
+                                style={styles.fitnessInput}
+                                value={fitnessMinutes}
+                                onChangeText={setFitnessMinutes}
+                                placeholder="e.g. 22"
+                                placeholderTextColor="#4A5680"
+                                keyboardType="numeric"
+                              />
+                            ) : null}
+                            {challenge.fitnessMetric === "distance" ? (
+                              <TextInput
+                                style={styles.fitnessInput}
+                                value={fitnessDistance}
+                                onChangeText={setFitnessDistance}
+                                placeholder="e.g. 3.5"
+                                placeholderTextColor="#4A5680"
+                                keyboardType="decimal-pad"
+                              />
+                            ) : null}
+                            <Pressable
+                              onPress={async () => {
+                                const steps = parseInt(fitnessSteps, 10) || 0;
+                                const minutes = parseInt(fitnessMinutes, 10) || 0;
+                                const distance = parseFloat(fitnessDistance) || 0;
+                                const entry: FitnessLogEntry = {
+                                  steps,
+                                  activeMinutes: minutes,
+                                  distance,
+                                  loggedAt: new Date().toISOString(),
+                                };
+                                logFitness(entry);
+                                setShowFitnessForm(null);
+                                setFitnessSteps("");
+                                setFitnessMinutes("");
+                                setFitnessDistance("");
+                                const verified = isFitnessChallengeVerified(challenge, entry);
+                                if (verified) {
+                                  toggleChallenge(challenge.id, node.id, challenge.xp);
+                                  flashXP(challenge.xp);
+                                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                  if (nodeProgress + 1 === activeChallenges.length) {
+                                    setJustCompleted(true);
+                                  }
+                                } else {
+                                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                                }
+                              }}
+                              style={({ pressed }) => [
+                                styles.fitnessSubmitBtn,
+                                { backgroundColor: alpha(nodeColor, "20"), borderColor: alpha(nodeColor, "34") },
+                                pressed && { opacity: 0.85 },
                               ]}
                             >
-                              {done ? (
-                                <Check size={12} color="#02050C" strokeWidth={3} />
-                              ) : !nodeUnlocked ? (
-                                <Lock size={12} color={Colors.light.muted} strokeWidth={2.4} />
-                              ) : null}
-                            </View>
-                            <View style={styles.challengeTextBlock}>
-                              <Text style={[styles.challengeTitle, done && styles.challengeTitleDone]}>{challenge.title}</Text>
-                              <Text style={styles.challengeDetail}>{challenge.detail}</Text>
-                            </View>
+                              <Text style={[styles.fitnessSubmitText, { color: nodeColor }]}>Verify & Complete</Text>
+                            </Pressable>
                           </View>
-
-                          <View style={styles.challengeRight}>
-                            <View style={[styles.xpPill, { borderColor: alpha(nodeColor, "30"), backgroundColor: alpha(nodeColor, "14") }]}>
-                              <Zap size={10} color={nodeColor} strokeWidth={2.5} />
-                              <Text style={[styles.xpPillText, { color: nodeColor }]}>+{challenge.xp}</Text>
-                            </View>
-                          </View>
-                        </BlurView>
-                      </Pressable>
+                        ) : null}
+                      </View>
                     );
                   })}
                 </View>
@@ -360,6 +519,29 @@ export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: P
           </Animated.View>
         </KeyboardAvoidingView>
       </Animated.View>
+
+      {focusChallenge ? (
+        <FocusSessionModal
+          visible={focusChallenge !== null}
+          durationMinutes={focusChallenge.focusDuration ?? 30}
+          challengeTitle={focusChallenge.title}
+          challengeId={focusChallenge.id}
+          nodeColor={nodeColor}
+          onClose={() => setFocusChallenge(null)}
+          onComplete={() => {
+            if (focusChallenge) {
+              recordFocusSession(focusChallenge.id);
+              toggleChallenge(focusChallenge.id, node.id, focusChallenge.xp);
+              flashXP(focusChallenge.xp);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              if (nodeProgress + 1 === activeChallenges.length) {
+                setJustCompleted(true);
+              }
+            }
+            setFocusChallenge(null);
+          }}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -658,5 +840,105 @@ const styles = StyleSheet.create({
   },
   footerSpace: {
     height: 28,
+  },
+  challengeTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  fixedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  fixedBadgeText: {
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  verifiedBadgeText: {
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  typeTagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+  },
+  typeTagText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  actionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  actionPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  fitnessForm: {
+    marginTop: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    padding: 16,
+    gap: 10,
+  },
+  fitnessFormLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 2,
+    color: "#4A5680",
+  },
+  fitnessFormHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: "rgba(232,235,247,0.6)",
+  },
+  fitnessInput: {
+    borderWidth: 1,
+    borderColor: "rgba(93,225,255,0.10)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#F0F4FF",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  fitnessSubmitBtn: {
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  fitnessSubmitText: {
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

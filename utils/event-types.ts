@@ -27,6 +27,14 @@ export const ANALYTICS_EVENTS = {
   STREAK_BROKEN: "streak_broken",
   STREAK_MILESTONE: "streak_milestone",
 
+  FITNESS_LOGGED: "fitness_logged",
+  FITNESS_VERIFIED: "fitness_verified",
+
+  FOCUS_SESSION_STARTED: "focus_session_started",
+  FOCUS_SESSION_COMPLETED: "focus_session_completed",
+  FOCUS_SESSION_INTERRUPTED: "focus_session_interrupted",
+  FOCUS_SESSION_CANCELLED: "focus_session_cancelled",
+
   APP_ERROR: "app_error",
 } as const;
 

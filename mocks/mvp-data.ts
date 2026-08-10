@@ -1,11 +1,24 @@
 export type DomainId = "mind" | "body" | "craft";
 
+export type ChallengeType = "manual" | "focus" | "fitness";
+export type FitnessMetric = "steps" | "activeMinutes" | "distance";
+
 export type Challenge = {
   id: string;
   nodeId: string;
   title: string;
   detail: string;
   xp: number;
+  /** Challenge type determines how it's verified. Defaults to "manual". */
+  type?: ChallengeType;
+  /** For fitness challenges: the metric to check */
+  fitnessMetric?: FitnessMetric;
+  /** For fitness challenges: the threshold value to meet */
+  fitnessThreshold?: number;
+  /** For focus challenges: duration in minutes */
+  focusDuration?: number;
+  /** Fixed challenges cannot be replaced by AI goal generation */
+  isFixed?: boolean;
 };
 
 export type SkillNode = {
@@ -28,9 +41,24 @@ export type TreeLevel = {
   color: string;
 };
 
+/** Filter challenges, excluding any fixed ones (which AI cannot replace) */
+export function getReplaceableChallenges(challenges: Challenge[]): Challenge[] {
+  return challenges.filter((c) => !c.isFixed);
+}
+
+/** Get all fixed challenges for a node */
+export function getFixedChallenges(challenges: Challenge[]): Challenge[] {
+  return challenges.filter((c) => c.isFixed);
+}
+
 type ChallengeSeed = {
   title: string;
   detail: string;
+  type?: ChallengeType;
+  fitnessMetric?: FitnessMetric;
+  fitnessThreshold?: number;
+  focusDuration?: number;
+  isFixed?: boolean;
 };
 
 type NodeSeed = Omit<SkillNode, "defaultChallenges"> & {
@@ -45,6 +73,11 @@ function makeChallenges(nodeId: string, xp: number, seeds: [ChallengeSeed, Chall
     title: seed.title,
     detail: seed.detail,
     xp,
+    type: seed.type ?? "manual",
+    fitnessMetric: seed.fitnessMetric,
+    fitnessThreshold: seed.fitnessThreshold,
+    focusDuration: seed.focusDuration,
+    isFixed: seed.isFixed,
   }));
 }
 
@@ -116,7 +149,7 @@ export const SKILL_NODES: SkillNode[] = [
     xp: 30,
     challenges: [
       { title: "Hydrate early", detail: "Drink 2 glasses after waking" },
-      { title: "Body wake-up", detail: "5-minute stretch sequence" },
+      { title: "Step start", detail: "Walk 3,000 steps today", type: "fitness", fitnessMetric: "steps", fitnessThreshold: 3000 },
       { title: "Sleep setup", detail: "No screens 30 minutes before bed" },
     ],
   }),
@@ -184,7 +217,7 @@ export const SKILL_NODES: SkillNode[] = [
     xp: 40,
     challenges: [
       { title: "Protein start", detail: "Eat a protein-first meal" },
-      { title: "Sun hit", detail: "Get 10 minutes of daylight" },
+      { title: "Active 15", detail: "Get 15 minutes of active movement today", type: "fitness", fitnessMetric: "activeMinutes", fitnessThreshold: 15 },
       { title: "Walk break", detail: "Take a 10-minute energy walk" },
     ],
   }),
@@ -235,7 +268,7 @@ export const SKILL_NODES: SkillNode[] = [
     xp: 50,
     challenges: [
       { title: "Main lift", detail: "Complete one strength session" },
-      { title: "Rep gain", detail: "Add 1 rep over last time" },
+      { title: "Active 30", detail: "Log 30 minutes of active movement today", type: "fitness", fitnessMetric: "activeMinutes", fitnessThreshold: 30 },
       { title: "Post-workout fuel", detail: "Eat a recovery meal" },
     ],
   }),
@@ -303,7 +336,7 @@ export const SKILL_NODES: SkillNode[] = [
     xp: 60,
     challenges: [
       { title: "Zone two", detail: "Cardio for 25 steady minutes" },
-      { title: "Distance up", detail: "Push your previous benchmark" },
+      { title: "Step 8K", detail: "Hit 8,000 steps today", type: "fitness", fitnessMetric: "steps", fitnessThreshold: 8000 },
       { title: "Finish strong", detail: "Complete the full planned session" },
     ],
   }),
@@ -489,9 +522,9 @@ export const SKILL_NODES: SkillNode[] = [
     parentIds: ["insight"],
     xp: 100,
     challenges: [
-      { title: "Flow gate", detail: "Create a 60-minute distraction-free window" },
-      { title: "Peak block", detail: "Work at your highest-energy time" },
-      { title: "Exit ritual", detail: "Close the session with a reset" },
+      { title: "Deep Focus 30", detail: "Block distractions for 30 minutes of pure focus", type: "focus", focusDuration: 30, isFixed: true },
+      { title: "Deep Focus 60", detail: "Enter a full hour of uninterrupted flow state", type: "focus", focusDuration: 60, isFixed: true },
+      { title: "Exit ritual", detail: "Close the session with a 5-minute reset and reflection" },
     ],
   }),
   createNode({
@@ -506,8 +539,8 @@ export const SKILL_NODES: SkillNode[] = [
     parentIds: ["sleep"],
     xp: 100,
     challenges: [
-      { title: "Benchmark", detail: "Test one key performance metric" },
-      { title: "Full session", detail: "Execute a complete training day" },
+      { title: "Step 10K", detail: "Hit 10,000 steps today", type: "fitness", fitnessMetric: "steps", fitnessThreshold: 10000 },
+      { title: "Active 45", detail: "Log 45 minutes of active movement", type: "fitness", fitnessMetric: "activeMinutes", fitnessThreshold: 45 },
       { title: "Recover hard", detail: "Nail recovery after effort" },
     ],
   }),

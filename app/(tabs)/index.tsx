@@ -314,14 +314,20 @@ export default function TreeScreen() {
       const allGenerated: Record<string, Challenge[]> = {};
       SKILL_NODES.forEach((node) => {
         const gen = generatedNodes?.[node.id as keyof typeof generatedNodes];
+        const fixed = node.defaultChallenges.filter((c) => c.isFixed);
+        const replaceableCount = node.defaultChallenges.length - fixed.length;
         if (gen) {
-          allGenerated[node.id] = gen.map((c, i) => ({
+          const aiGenerated = gen.slice(0, replaceableCount).map((c, i) => ({
             id: `ai-${node.id}-${i}-${Date.now()}`,
             nodeId: node.id,
             title: c.title,
             detail: c.detail,
             xp: c.xp,
+            type: "manual" as const,
           }));
+          // Fixed challenges (e.g. distraction-free focus sessions) are always
+          // preserved and prepended — AI cannot replace or remove them.
+          allGenerated[node.id] = [...fixed, ...aiGenerated];
         } else {
           allGenerated[node.id] = node.defaultChallenges;
         }
