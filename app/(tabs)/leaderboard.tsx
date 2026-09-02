@@ -8,6 +8,8 @@ import {
 } from "react-native";
 import { Crown, Medal, Trophy } from "lucide-react-native";
 
+import Colors from "@/constants/colors";
+
 const MOCK_USERS = [
   { id: "usr_1", name: "Nova Quinn", xp: 12840 },
   { id: "usr_2", name: "Ari Stone", xp: 12110 },
@@ -110,7 +112,7 @@ export default function LeaderboardScreen() {
 const styles = StyleSheet.create({
   shell: {
     flex: 1,
-    backgroundColor: "#060810",
+    backgroundColor: Colors.light.background,
   },
   safeArea: {
     flex: 1,
@@ -121,11 +123,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   brand: {
-    color: "#5D7BFF",
+    color: Colors.light.tint,
     letterSpacing: 3,
     textTransform: "uppercase",
     fontSize: 11,
-    fontFamily: "OutfitBold",
+    fontFamily: "monospace",
   },
   title: {
     color: "#F4F7FF",
@@ -134,10 +136,10 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     marginTop: 6,
-    backgroundColor: "#0D1220",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#1D2640",
+    backgroundColor: Colors.light.card,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.light.arcadeBlue,
     padding: 16,
     gap: 4,
   },
@@ -172,10 +174,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#0B0F1A",
-    borderWidth: 1,
-    borderColor: "#1A2238",
-    borderRadius: 16,
+    backgroundColor: Colors.light.card,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 12,
     shadowOpacity: 0.15,
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     borderColor: "#253154",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#101625",
+    backgroundColor: Colors.light.surfaceDeep,
   },
   rankText: {
     color: "#90A0C8",

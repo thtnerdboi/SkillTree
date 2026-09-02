@@ -35,6 +35,7 @@ const NODE_IDS = [
 ] as const;
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const GEMINI_REQUEST_TIMEOUT_MS = 12_000;
 const MAX_GEMINI_INPUT_LENGTH = 500;
 
 const AI_GENERATION_RATE_LIMIT = 20;
@@ -172,7 +173,7 @@ export const aiRouter = createTRPCRouter({
       const model = genAI.getGenerativeModel({
         model: GEMINI_MODEL,
         generationConfig: { responseMimeType: "application/json" },
-      });
+      }, { timeout: GEMINI_REQUEST_TIMEOUT_MS });
 
       const prompt = `
         You are an expert gamified habit tracker and RPG skill tree designer.
@@ -238,7 +239,7 @@ export const aiRouter = createTRPCRouter({
         generationConfig: {
           responseMimeType: "application/json",
         },
-      });
+      }, { timeout: GEMINI_REQUEST_TIMEOUT_MS });
 
       const prompt = `
         You are an expert gamified habit tracker and RPG skill tree designer.

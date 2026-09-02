@@ -97,9 +97,9 @@ function createNode(seed: NodeSeed): SkillNode {
 }
 
 export const DOMAIN_COLOR: Record<DomainId, string> = {
-  mind: "#64B5FF",
-  body: "#FF6A4D",
-  craft: "#A78BFA",
+  mind: "#45E9FF",
+  body: "#FF5C5C",
+  craft: "#FF9FF3",
 };
 
 export const DOMAIN_LABEL: Record<DomainId, string> = {
@@ -109,13 +109,13 @@ export const DOMAIN_LABEL: Record<DomainId, string> = {
 };
 
 export const TREE_LEVELS: TreeLevel[] = [
-  { number: 1, title: "Foundation", subtitle: "Awaken your base", color: "#3DFF8E" },
-  { number: 2, title: "Discipline", subtitle: "Turn intent into rhythm", color: "#5DE1FF" },
-  { number: 3, title: "Expansion", subtitle: "Widen your capability", color: "#64B5FF" },
-  { number: 4, title: "Specialization", subtitle: "Shape your build", color: "#7C9BFF" },
-  { number: 5, title: "Momentum", subtitle: "Compound the gains", color: "#A78BFA" },
-  { number: 6, title: "Ascension", subtitle: "Operate with intent", color: "#FF8AE2" },
-  { number: 7, title: "Transcendence", subtitle: "Reach your upper form", color: "#FFD700" },
+  { number: 1, title: "Foundation", subtitle: "Awaken your base", color: "#72F1B8" },
+  { number: 2, title: "Discipline", subtitle: "Turn intent into rhythm", color: "#45E9FF" },
+  { number: 3, title: "Expansion", subtitle: "Widen your capability", color: "#315CFF" },
+  { number: 4, title: "Specialization", subtitle: "Shape your build", color: "#8A7DFF" },
+  { number: 5, title: "Momentum", subtitle: "Compound the gains", color: "#FF9FF3" },
+  { number: 6, title: "Ascension", subtitle: "Operate with intent", color: "#FF5C5C" },
+  { number: 7, title: "Transcendence", subtitle: "Reach your upper form", color: "#FFD60A" },
 ];
 
 export const SKILL_NODES: SkillNode[] = [

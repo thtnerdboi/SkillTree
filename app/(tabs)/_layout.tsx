@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, User, Users } from "lucide-react-native";
+import { Home, Trophy, User, Users } from "lucide-react-native";
 import React from "react";
 import { Platform, View } from "react-native";
 import { BlurView } from "expo-blur";
@@ -29,7 +29,7 @@ function TabIcon({
         style={{
           padding: 8,
           borderRadius: 999,
-          backgroundColor: focused ? "rgba(93,225,255,0.12)" : "transparent",
+          backgroundColor: focused ? "rgba(255,214,10,0.14)" : "transparent",
         }}
       >
         <Icon color={color} size={22} strokeWidth={2.2} />
@@ -52,14 +52,14 @@ const tabBarGlassStyle = {
   flex: 1,
   borderRadius: 32,
   overflow: "hidden" as const,
-  backgroundColor: "rgba(8,13,26,0.68)",
-  borderWidth: 1,
-  borderColor: "rgba(255,255,255,0.1)",
+  backgroundColor: "rgba(11,16,43,0.9)",
+  borderWidth: 2,
+  borderColor: "rgba(49,92,255,0.55)",
 };
 
 function TabBarGlass() {
   if (Platform.OS === "android") {
-    return <View style={[tabBarGlassStyle, { backgroundColor: "#0d1120" }]} />;
+    return <View style={[tabBarGlassStyle, { backgroundColor: Colors.light.surfaceDeep }]} />;
   }
 
   return <BlurView tint="dark" intensity={80} style={tabBarGlassStyle} />;
@@ -91,7 +91,7 @@ const tabBarIconStyle = {
 };
 
 const sceneStyle = {
-  backgroundColor: "#080D1A",
+  backgroundColor: Colors.light.background,
 };
 
 export default function TabLayout() {
@@ -99,7 +99,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors.light.tint,
-        tabBarInactiveTintColor: "#7C86AA",
+        tabBarInactiveTintColor: Colors.light.tabIconDefault,
         headerShown: false,
         tabBarShowLabel: false,
         sceneStyle,
@@ -125,7 +125,10 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="leaderboard"
-        options={{ href: null }}
+        options={{
+          title: "Leaderboard",
+          tabBarIcon: ({ color, focused }) => <TabIcon color={color} focused={focused} Icon={Trophy} />,
+        }}
       />
       <Tabs.Screen
         name="profile"

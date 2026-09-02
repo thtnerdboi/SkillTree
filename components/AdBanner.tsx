@@ -9,18 +9,6 @@ type AdBannerProps = {
   style?: ViewStyle;
 };
 
-// TODO: Create banner ad units in your AdMob dashboard and replace these placeholder
-// unit IDs with your real ones. Keep the TestIds branches for __DEV__ — they always
-// serve test ads so the emulator/simulator never hits your live inventory.
-const BANNER_UNIT_ID = Platform.select({
-  android: __DEV__
-    ? TestIds.BANNER
-    : "ca-app-pub-5851180331769845/4361964831",
-  ios: __DEV__
-    ? TestIds.BANNER
-    : "ca-app-pub-5851180331769845/4267065252",
-})!;
-
 export function AdBanner({ style }: AdBannerProps) {
   if (IS_EXPO_GO) return null;
 

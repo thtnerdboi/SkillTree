@@ -1,6 +1,6 @@
 import createContextHook from "@nkzw/create-context-hook";
 import Constants from "expo-constants";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 import Purchases, {
   type CustomerInfo,
@@ -23,6 +23,22 @@ const isNativeMobile = Platform.OS === "ios" || Platform.OS === "android";
 
 const isProCustomer = (customerInfo: CustomerInfo | null) =>
   Boolean(customerInfo?.entitlements.active[REVENUECAT_ENTITLEMENT_ID]);
+
+const getActiveEntitlementIds = (customerInfo: CustomerInfo | null) =>
+  Object.keys(customerInfo?.entitlements.active ?? {});
+
+const buildMissingEntitlementMessage = (
+  customerInfo: CustomerInfo | null,
+  productId?: string
+) => {
+  const activeEntitlements = getActiveEntitlementIds(customerInfo);
+  const productLabel = productId ? ` Product: "${productId}".` : "";
+  const activeLabel = activeEntitlements.length > 0
+    ? activeEntitlements.map((id) => `"${id}"`).join(", ")
+    : "none";
+
+  return `The purchase completed, but entitlement "${REVENUECAT_ENTITLEMENT_ID}" is not active.${productLabel} Active entitlements: ${activeLabel}. Check the product-to-entitlement attachment in RevenueCat.`;
+};
 
 const formatRevenueCatError = (error: unknown) => {
   const purchasesError = error as Partial<PurchasesError> | undefined;
@@ -57,6 +73,7 @@ const findPackage = (
 
 export const [RevenueCatProvider, useRevenueCat] = createContextHook(() => {
   const { state, setPro } = useAppState();
+  const setProRef = useRef(setPro);
   const [isConfigured, setIsConfigured] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState(false);
@@ -64,12 +81,22 @@ export const [RevenueCatProvider, useRevenueCat] = createContextHook(() => {
   const [currentOffering, setCurrentOffering] = useState<PurchasesOffering | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setProRef.current = setPro;
+  }, [setPro]);
+
   const syncCustomerInfo = useCallback(
     (nextCustomerInfo: CustomerInfo | null) => {
+      const nextIsPro = isProCustomer(nextCustomerInfo);
+      console.log("[revenuecat] Customer info synced:", {
+        expectedEntitlement: REVENUECAT_ENTITLEMENT_ID,
+        activeEntitlements: getActiveEntitlementIds(nextCustomerInfo),
+        isPro: nextIsPro,
+      });
       setCustomerInfo(nextCustomerInfo);
-      setPro(isProCustomer(nextCustomerInfo));
+      setProRef.current(nextIsPro);
     },
-    [setPro]
+    []
   );
 
   const refreshCustomerInfo = useCallback(async () => {
@@ -205,7 +232,17 @@ export const [RevenueCatProvider, useRevenueCat] = createContextHook(() => {
       try {
         const { customerInfo: nextCustomerInfo } = await Purchases.purchasePackage(pkg);
         syncCustomerInfo(nextCustomerInfo);
-        return isProCustomer(nextCustomerInfo);
+        const purchasedPro = isProCustomer(nextCustomerInfo);
+        if (!purchasedPro) {
+          const message = buildMissingEntitlementMessage(
+            nextCustomerInfo,
+            pkg.product.identifier
+          );
+          setError(message);
+          console.warn("[revenuecat] Purchase missing entitlement:", message);
+          Alert.alert("Purchase completed but Pro is locked", message);
+        }
+        return purchasedPro;
       } catch (err) {
         if (!isPurchaseCancelled(err)) {
           const message = formatRevenueCatError(err);
@@ -262,8 +299,17 @@ export const [RevenueCatProvider, useRevenueCat] = createContextHook(() => {
         requiredEntitlementIdentifier: REVENUECAT_ENTITLEMENT_ID,
       });
 
-      await refreshCustomerInfo();
-      return result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED;
+      const nextCustomerInfo = await refreshCustomerInfo();
+      const purchaseCompleted =
+        result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED;
+      const purchasedPro = isProCustomer(nextCustomerInfo);
+      if (purchaseCompleted && !purchasedPro) {
+        const message = buildMissingEntitlementMessage(nextCustomerInfo);
+        setError(message);
+        console.warn("[revenuecat] Paywall result missing entitlement:", message);
+        Alert.alert("Purchase completed but Pro is locked", message);
+      }
+      return purchaseCompleted && purchasedPro;
     } catch (err) {
       const message = formatRevenueCatError(err);
       setError(message);

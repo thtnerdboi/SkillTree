@@ -110,7 +110,7 @@ export default function WelcomeScreen() {
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={["#060810", Colors.light.background, "#10172A"]}
+        colors={[Colors.light.background, Colors.light.surfaceDeep, "#11183A"]}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.treeLayer} pointerEvents="none">
@@ -161,11 +161,11 @@ export default function WelcomeScreen() {
       </View>
 
       <SafeAreaView style={styles.content}>
-        <Text style={styles.logo}>ARCSTEP</Text>
+        <Text style={styles.logo}>● SKILLTREE / PLAYER ONE</Text>
         <View style={styles.hero}>
-          <Text style={styles.heading}>Level up your life.</Text>
+          <Text style={styles.heading}>REAL LIFE.{"\n"}GAME RULES.</Text>
           <Text style={styles.subtitle}>
-            Complete challenges. Unlock skills. Become who you want to be.
+            Pick your quests, move your pixel player, and unlock the next path.
           </Text>
         </View>
         <Pressable
@@ -178,7 +178,7 @@ export default function WelcomeScreen() {
           ]}
         >
           <Text style={styles.buttonText}>
-            {isStarting ? "Starting..." : "Begin Your Journey"}
+            {isStarting ? "LOADING..." : "PRESS START"}
           </Text>
         </Pressable>
       </SafeAreaView>
@@ -189,7 +189,7 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#060810",
+    backgroundColor: Colors.light.background,
   },
   treeLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(93, 225, 255, 0.08)",
+    backgroundColor: "rgba(49, 92, 255, 0.16)",
     shadowColor: Colors.light.tint,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
@@ -226,9 +226,10 @@ const styles = StyleSheet.create({
   },
   logo: {
     color: Colors.light.tint,
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 0,
+    fontFamily: "monospace",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.8,
   },
   hero: {
     flex: 1,
@@ -237,10 +238,11 @@ const styles = StyleSheet.create({
   },
   heading: {
     color: Colors.light.text,
-    fontSize: 48,
+    fontFamily: "monospace",
+    fontSize: 42,
     fontWeight: "900",
-    lineHeight: 54,
-    letterSpacing: 0,
+    lineHeight: 50,
+    letterSpacing: -1,
     textAlign: "center",
   },
   subtitle: {
@@ -254,7 +256,9 @@ const styles = StyleSheet.create({
   button: {
     alignItems: "center",
     backgroundColor: Colors.light.tint,
-    borderRadius: 8,
+    borderRadius: 3,
+    borderWidth: 3,
+    borderColor: "#FFF3A3",
     justifyContent: "center",
     minHeight: 58,
     paddingHorizontal: 20,
@@ -267,10 +271,11 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   buttonText: {
-    color: "#060810",
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: 0,
+    color: Colors.light.background,
+    fontFamily: "monospace",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 1.2,
     textAlign: "center",
   },
 });

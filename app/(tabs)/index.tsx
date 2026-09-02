@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Animated,
   Easing,
+  Keyboard,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
-import Svg, { Circle as SvgCircle, Defs, LinearGradient as SvgLinearGradient, Path, RadialGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Circle as SvgCircle, Defs, LinearGradient as SvgLinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from "react-native-svg";
 import {
   Activity, Award, Briefcase, ChevronLeft, ChevronRight, Crown, Eye,
   Flame, Hammer, Heart, Lightbulb, Lock, MoonStar, PenTool,
@@ -35,6 +35,8 @@ import { ANALYTICS_EVENTS } from "@/utils/event-types";
 import { OnboardingScreens } from "@/components/OnboardingScreens";
 import { NodePanel } from "@/components/NodePanel";
 import { PrestigeModal } from "@/components/PrestigeModal";
+import { TreeAvatar, type AvatarActivity } from "@/components/TreeAvatar";
+import { getAvatarForRank } from "@/utils/avatar-presets";
 
 type IconComp = React.ComponentType<{ size: number; color: string; strokeWidth: number }>;
 type TreePoint = { x: number; y: number };
@@ -51,6 +53,8 @@ const LEVEL_SPACING = 320;
 const ORIGIN_BOTTOM_PADDING = 280;
 const ORIGIN_SIZE = 120;
 const NODE_SIZE = 108;
+const NODE_HEIGHT = Math.round(NODE_SIZE * 1.35);
+const HEX_TIP_FRACTION = 0.25;
 const NODE_GLOW_SIZE = 172;
 const HEADER_HEIGHT = 76;
 const TAB_BAR_OFFSET = 96;
@@ -58,13 +62,43 @@ const MAP_BOTTOM_PADDING = 200;
 const LINE_GLOW_WIDTH = 18;
 const LINE_CORE_WIDTH = 7;
 const LABEL_PILL_WIDTH = 128;
-const APP_BACKGROUND = "#050811";
-const GRID_COLOR = "rgba(93,225,255,0.04)";
+const APP_BACKGROUND = Colors.light.background;
+const GRID_COLOR = "rgba(49,92,255,0.11)";
 const ENERGY_SIZE = 20;
-const NEON_CYAN = "#5DE1FF";
+const NEON_CYAN = Colors.light.tint;
+const SCROLL_SETTLE_DELAY_MS = 120;
+const ONBOARDING_GENERATION_TIMEOUT_MS = 15_000;
 
 function alpha(hexColor: string, value: string): string { return `${hexColor}${value}`; }
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max); }
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Tree generation exceeded ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
+/** Vertical hexagon points — pointed top/bottom, flat left/right edges. */
+function hexPoints(w: number, h: number, tipFraction: number = HEX_TIP_FRACTION, offsetX = 0, offsetY = 0): string {
+  const tip1 = h * tipFraction;
+  const tip2 = h * (1 - tipFraction);
+  return [
+    [w / 2, 0], [w, tip1], [w, tip2], [w / 2, h], [0, tip2], [0, tip1],
+  ].map(([x, y]) => `${x + offsetX},${y + offsetY}`).join(" ");
+}
 
 const COLUMN_DOMAINS: DomainId[] = ["mind", "body", "craft"];
 const COLUMN_XFRAC: Record<DomainId, number> = { mind: 0.2, body: 0.5, craft: 0.8 };
@@ -88,7 +122,7 @@ function GridBackground({ width, height }: { width: number; height: number }) {
   }
   for (let i = 0; i <= cols; i += 2) {
     for (let j = 0; j <= rows; j += 2) {
-      lines.push(<SvgCircle key={`dot-${i}-${j}`} cx={i * gridSize} cy={j * gridSize} r={1} fill="rgba(93,225,255,0.08)" />);
+      lines.push(<SvgCircle key={`dot-${i}-${j}`} cx={i * gridSize} cy={j * gridSize} r={1.6} fill="rgba(255,214,10,0.22)" />);
     }
   }
   return (
@@ -103,7 +137,7 @@ function ScanlineOverlay({ width, height }: { width: number; height: number }) {
     <View pointerEvents="none" style={[scanlineStyles.overlay, { width, height }]}>
       <Svg width={width} height={height} style={StyleSheet.absoluteFillObject}>
         {Array.from({ length: Math.ceil(height / 3) }).map((_, i) => (
-          <Rect key={i} x={0} y={i * 3} width={width} height={1} fill="rgba(93,225,255,0.015)" />
+          <Rect key={i} x={0} y={i * 3} width={width} height={1} fill="rgba(49,92,255,0.022)" />
         ))}
       </Svg>
     </View>
@@ -149,6 +183,7 @@ function NodeBubble({ node, point, unlocked, complete, hasProgress, focused, onP
   const scale = useRef(new Animated.Value(1)).current;
   const color = DOMAIN_COLOR[node.domainId];
   const Icon = ICON_MAP[node.icon];
+  const fillId = `node-shade-${node.id}`;
   const handlePressIn = useCallback(() => {
     Animated.spring(scale, { toValue: 0.92, useNativeDriver: true, tension: 300, friction: 10 }).start();
   }, [scale]);
@@ -159,13 +194,11 @@ function NodeBubble({ node, point, unlocked, complete, hasProgress, focused, onP
     <>
       <View style={[styles.nodeWrap, { left: point.x - NODE_GLOW_SIZE / 2, top: point.y - NODE_GLOW_SIZE / 2 }]}>
         {unlocked ? <GlowLayers color={color} complete={complete} focused={focused} /> : null}
-        {focused && unlocked ? <View pointerEvents="none" style={[styles.focusRing, { borderColor: alpha(color, "50") }]} /> : null}
+        {focused ? <View pointerEvents="none" style={[styles.focusRing, { borderColor: unlocked ? alpha(color, "60") : alpha(Colors.light.error, "80") }]} /> : null}
         <Animated.View style={{ transform: [{ scale: focused ? Animated.multiply(scale, 1.06) : scale }] }}>
           <Pressable testID={`node-${node.id}`} onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}
             style={[styles.nodeCore, {
-              width: NODE_SIZE, height: NODE_SIZE, borderRadius: NODE_SIZE / 2,
-              borderColor: unlocked ? focused ? color : alpha(color, complete ? "D0" : "80") : "rgba(255,255,255,0.06)",
-              backgroundColor: unlocked ? alpha(color, focused ? "20" : complete ? "16" : "0E") : "rgba(5,8,17,0.9)",
+              width: NODE_SIZE, height: NODE_HEIGHT,
               opacity: unlocked ? 1 : 0.5,
               shadowColor: unlocked ? color : "#000",
               shadowOpacity: focused ? 0.45 : unlocked ? 0.25 : 0.1,
@@ -173,14 +206,36 @@ function NodeBubble({ node, point, unlocked, complete, hasProgress, focused, onP
               shadowOffset: { width: 0, height: 0 },
               elevation: focused ? 20 : 12,
             }]}>
-            <View style={[styles.nodeInnerRing, { borderColor: unlocked ? alpha(color, focused ? "4A" : complete ? "38" : "20") : "rgba(255,255,255,0.04)" }]} />
+            <Svg width={NODE_SIZE} height={NODE_HEIGHT} style={StyleSheet.absoluteFillObject} pointerEvents="none">
+              <Defs>
+                <SvgLinearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={unlocked ? color : "#263052"} stopOpacity={unlocked ? (focused ? 0.3 : complete ? 0.2 : 0.14) : 0.13} />
+                  <Stop offset="48%" stopColor={APP_BACKGROUND} stopOpacity={0.94} />
+                  <Stop offset="100%" stopColor={unlocked ? color : "#11162E"} stopOpacity={unlocked ? (focused ? 0.18 : 0.09) : 0.08} />
+                </SvgLinearGradient>
+              </Defs>
+              <Polygon
+                points={hexPoints(NODE_SIZE, NODE_HEIGHT)}
+                fill={`url(#${fillId})`}
+                stroke={unlocked ? focused ? color : alpha(color, complete ? "D0" : "80") : "rgba(255,255,255,0.06)"}
+                strokeWidth={2}
+                strokeLinejoin="round"
+              />
+              <Polygon
+                points={hexPoints(NODE_SIZE - 16, NODE_HEIGHT - 16, HEX_TIP_FRACTION, 8, 8)}
+                fill="none"
+                stroke={unlocked ? alpha(color, focused ? "4A" : complete ? "38" : "20") : "rgba(255,255,255,0.04)"}
+                strokeWidth={1}
+                strokeLinejoin="round"
+              />
+            </Svg>
             {unlocked && Icon ? <Icon size={34} color={complete ? color : alpha(color, "F0")} strokeWidth={2.0} /> : <Lock size={20} color="#3A4566" strokeWidth={2.0} />}
             {hasProgress ? <View style={[styles.progressDot, { backgroundColor: color, borderColor: APP_BACKGROUND }]} /> : null}
             {complete ? <View style={[styles.completeBadge, { backgroundColor: color }]}><Text style={styles.completeBadgeCheck}>✓</Text></View> : null}
           </Pressable>
         </Animated.View>
       </View>
-      <View pointerEvents="none" style={[styles.labelWrap, { left: point.x - LABEL_PILL_WIDTH / 2, top: point.y + NODE_SIZE / 2 + 16, width: LABEL_PILL_WIDTH }]}>
+      <View pointerEvents="none" style={[styles.labelWrap, { left: point.x - LABEL_PILL_WIDTH / 2, top: point.y + NODE_HEIGHT / 2 + 16, width: LABEL_PILL_WIDTH }]}>
         <View style={[styles.labelConnector, { backgroundColor: unlocked ? alpha(color, "60") : "rgba(255,255,255,0.08)" }]} />
         <View style={[styles.nodeLabelPill, {
           backgroundColor: unlocked ? alpha(color, focused ? "1C" : "12") : "rgba(255,255,255,0.03)",
@@ -288,6 +343,8 @@ export default function TreeScreen() {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const openNodeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollOffsetRef = useRef<TreePoint>({ x: 0, y: 0 });
+  const verticalSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const horizontalSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [xpGained, setXpGained] = useState<number>(0);
   const [focusedColumn, setFocusedColumn] = useState<DomainId>("body");
   const [focusedLevel, setFocusedLevel] = useState<number>(0);
@@ -306,11 +363,14 @@ export default function TreeScreen() {
     setGeneratingChallenges(true);
     setGenerateError(null);
     try {
-      const generatedNodes = await generateTreeMutation.mutateAsync({
-        mind: answers.mind,
-        body: answers.body,
-        craft: answers.craft,
-      });
+      const generatedNodes = await withTimeout(
+        generateTreeMutation.mutateAsync({
+          mind: answers.mind,
+          body: answers.body,
+          craft: answers.craft,
+        }),
+        ONBOARDING_GENERATION_TIMEOUT_MS
+      );
       const allGenerated: Record<string, Challenge[]> = {};
       SKILL_NODES.forEach((node) => {
         const gen = generatedNodes?.[node.id as keyof typeof generatedNodes];
@@ -373,7 +433,7 @@ export default function TreeScreen() {
     horizontalScrollRef.current?.scrollTo({ x, y: 0, animated });
     verticalScrollRef.current?.scrollTo({ x: 0, y, animated });
     scrollOffsetRef.current = { x, y };
-  }, [canvasHeight, canvasWidth, height, mapScale, width]);
+  }, [canvasHeight, canvasWidth, height, width]);
 
   const nodePositions = useMemo<Record<string, TreePoint>>(() => {
     const positions: Record<string, TreePoint> = {};
@@ -409,21 +469,45 @@ export default function TreeScreen() {
     return node?.id ?? "origin";
   }, [focusedColumn, focusedLevel]);
 
+  const focusedNode = useMemo(
+    () => focusedNodeId === "origin" ? undefined : SKILL_NODES.find((node) => node.id === focusedNodeId),
+    [focusedNodeId]
+  );
+  const avatarTarget = focusedNode ? (nodePositions[focusedNode.id] ?? originPoint) : originPoint;
+  const avatarUnlocked = !focusedNode || isNodeUnlocked(focusedNode.id);
+  const avatarFallback = useMemo<TreePoint>(() => {
+    if (avatarUnlocked) return avatarTarget;
+    for (let level = focusedLevel - 1; level >= 1; level -= 1) {
+      const candidate = findNodeInColumn(focusedColumn, level);
+      if (candidate && isNodeUnlocked(candidate.id)) return nodePositions[candidate.id] ?? originPoint;
+    }
+    return originPoint;
+  }, [avatarTarget, avatarUnlocked, focusedColumn, focusedLevel, isNodeUnlocked, nodePositions, originPoint]);
+  const avatarActivity: AvatarActivity = !focusedNode
+    ? "ready"
+    : focusedNode.domainId === "mind"
+      ? "meditate"
+      : focusedNode.domainId === "body"
+        ? "lift"
+        : "code";
+  const avatarColor = focusedNode ? DOMAIN_COLOR[focusedNode.domainId] : NEON_CYAN;
+  const avatarConfig = state.onboardingAnswers?.avatar ?? getAvatarForRank(state.prestigeCount);
+
   const focusColumnLevel = useCallback((col: DomainId, level: number, animated: boolean) => {
+    if (animated) {
+      isProgrammaticScrollRef.current = true;
+      if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
+      // Native scroll events may start synchronously, so take the lock before scrollTo.
+      programmaticScrollTimeoutRef.current = setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 550);
+    }
+
     setFocusedColumn(col);
     setFocusedLevel(level);
     const node = level === 0 ? undefined : findNodeInColumn(col, level);
     const point = level === 0 ? originPoint : node ? nodePositions[node.id] : undefined;
     if (point) focusPoint(point, animated);
-
-    if (animated) {
-      isProgrammaticScrollRef.current = true;
-      if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
-      // Matches the scrollTo animation duration with margin — release the lock after it settles.
-      programmaticScrollTimeoutRef.current = setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 550);
-    }
   }, [focusPoint, nodePositions, originPoint]);
 
   const focusNodeId = useCallback((nodeId: string, animated: boolean) => {
@@ -469,16 +553,14 @@ export default function TreeScreen() {
     }
   }, [setEnergyTravel]);
 
-  const handleVerticalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = event.nativeEvent.contentOffset.y;
+  const settleVerticalOffset = useCallback((y: number) => {
     scrollOffsetRef.current = { ...scrollOffsetRef.current, y };
     if (isProgrammaticScrollRef.current) return;
 
-    // Lock focus to the nearest level in the current column, same effect as the
-    // horizontal column snap — keeps labels/highlighting in sync with manual scrolling.
+    // This is the exact inverse of focusPoint's y offset. Keeping both directions
+    // symmetrical prevents focus from jumping a level when scrolling settles.
     const visibleHeight = Math.max(height - HEADER_HEIGHT - TAB_BAR_OFFSET, 240);
-    const paddingTop = HEADER_HEIGHT + 70;
-    const centerYCanvas = y + visibleHeight / 2 - paddingTop;
+    const centerYCanvas = y + visibleHeight / 2;
 
     let bestLevel = 0;
     let bestDist = Infinity;
@@ -493,11 +575,8 @@ export default function TreeScreen() {
     }
   }, [height, maxTreeLevel, originY, mapScale, focusedLevel]);
 
-  const handleHorizontalScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const x = event.nativeEvent.contentOffset.x;
+  const settleHorizontalOffset = useCallback((x: number) => {
     scrollOffsetRef.current = { ...scrollOffsetRef.current, x };
-    // A deliberate arrow-press / node-tap scroll is still settling — don't let this
-    // handler's own column detection fight it and snap back.
     if (isProgrammaticScrollRef.current) return;
     const centerX = x + width / 2;
     let best: DomainId = "body";
@@ -511,6 +590,73 @@ export default function TreeScreen() {
       if (focusedLevel === 0) setFocusedLevel(1);
     }
   }, [canvasWidth, width, focusedColumn, focusedLevel]);
+
+  const handleUserScrollBegin = useCallback(() => {
+    // A finger drag takes ownership from any in-flight arrow/node camera move.
+    isProgrammaticScrollRef.current = false;
+    if (programmaticScrollTimeoutRef.current) {
+      clearTimeout(programmaticScrollTimeoutRef.current);
+      programmaticScrollTimeoutRef.current = null;
+    }
+    if (verticalSettleTimeoutRef.current) {
+      clearTimeout(verticalSettleTimeoutRef.current);
+      verticalSettleTimeoutRef.current = null;
+    }
+    if (horizontalSettleTimeoutRef.current) {
+      clearTimeout(horizontalSettleTimeoutRef.current);
+      horizontalSettleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleVerticalScrollEndDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = event.nativeEvent.contentOffset.y;
+    scrollOffsetRef.current = { ...scrollOffsetRef.current, y };
+    if (verticalSettleTimeoutRef.current) clearTimeout(verticalSettleTimeoutRef.current);
+    verticalSettleTimeoutRef.current = setTimeout(() => {
+      verticalSettleTimeoutRef.current = null;
+      settleVerticalOffset(y);
+    }, SCROLL_SETTLE_DELAY_MS);
+  }, [settleVerticalOffset]);
+
+  const handleVerticalMomentumBegin = useCallback(() => {
+    if (verticalSettleTimeoutRef.current) {
+      clearTimeout(verticalSettleTimeoutRef.current);
+      verticalSettleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleVerticalMomentumEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (verticalSettleTimeoutRef.current) {
+      clearTimeout(verticalSettleTimeoutRef.current);
+      verticalSettleTimeoutRef.current = null;
+    }
+    settleVerticalOffset(event.nativeEvent.contentOffset.y);
+  }, [settleVerticalOffset]);
+
+  const handleHorizontalScrollEndDrag = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = event.nativeEvent.contentOffset.x;
+    scrollOffsetRef.current = { ...scrollOffsetRef.current, x };
+    if (horizontalSettleTimeoutRef.current) clearTimeout(horizontalSettleTimeoutRef.current);
+    horizontalSettleTimeoutRef.current = setTimeout(() => {
+      horizontalSettleTimeoutRef.current = null;
+      settleHorizontalOffset(x);
+    }, SCROLL_SETTLE_DELAY_MS);
+  }, [settleHorizontalOffset]);
+
+  const handleHorizontalMomentumBegin = useCallback(() => {
+    if (horizontalSettleTimeoutRef.current) {
+      clearTimeout(horizontalSettleTimeoutRef.current);
+      horizontalSettleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleHorizontalMomentumEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (horizontalSettleTimeoutRef.current) {
+      clearTimeout(horizontalSettleTimeoutRef.current);
+      horizontalSettleTimeoutRef.current = null;
+    }
+    settleHorizontalOffset(event.nativeEvent.contentOffset.x);
+  }, [settleHorizontalOffset]);
 
   const handleCanvasReady = useCallback(() => {
     if (!hasCentered.current && state.onboardingComplete) {
@@ -534,6 +680,8 @@ export default function TreeScreen() {
       pulse.stop();
       if (openNodeTimeoutRef.current) clearTimeout(openNodeTimeoutRef.current);
       if (programmaticScrollTimeoutRef.current) clearTimeout(programmaticScrollTimeoutRef.current);
+      if (verticalSettleTimeoutRef.current) clearTimeout(verticalSettleTimeoutRef.current);
+      if (horizontalSettleTimeoutRef.current) clearTimeout(horizontalSettleTimeoutRef.current);
     };
   }, [pulseAnim]);
 
@@ -560,8 +708,8 @@ export default function TreeScreen() {
                 <View style={styles.authBrandDot} />
                 <Text style={styles.brand}>SKILLTREE</Text>
               </View>
-              <Text style={styles.authTitle}>Level up{"\n"}your life.</Text>
-              <Text style={styles.authSub}>A gamified skill tree that adapts to your goals. Build habits, track growth, prestige your character.</Text>
+              <Text style={styles.authTitle}>READY PLAYER{"\n"}ONE?</Text>
+              <Text style={styles.authSub}>Name your player, choose your quests, and climb a skill tree built around real-life progress.</Text>
             </View>
             <View style={styles.proUpsellCard}>
               <View style={styles.proUpsellHeader}>
@@ -590,7 +738,10 @@ export default function TreeScreen() {
               <TextInput style={styles.authInput} value={nameInput} onChangeText={setNameInput}
                 placeholder="Enter your name" placeholderTextColor="#4A5680" autoCapitalize="words" testID="auth-name" />
               <TouchableOpacity style={[styles.primaryBtn, !nameInput.trim() && styles.primaryBtnDisabled]}
-                onPress={() => signIn(nameInput.trim() || "Adventurer")} disabled={!nameInput.trim()} testID="auth-continue">
+                onPress={() => {
+                  Keyboard.dismiss();
+                  signIn(nameInput.trim() || "Adventurer");
+                }} disabled={!nameInput.trim()} testID="auth-continue">
                 <Text style={styles.primaryBtnText}>Begin Journey</Text>
                 <ChevronRight size={18} color="#050811" strokeWidth={2.5} />
               </TouchableOpacity>
@@ -669,12 +820,18 @@ export default function TreeScreen() {
           contentContainerStyle={{ paddingTop: HEADER_HEIGHT + 70, paddingBottom: MAP_BOTTOM_PADDING }}
           showsVerticalScrollIndicator={false} scrollEventThrottle={16}
           directionalLockEnabled={true} nestedScrollEnabled={true} decelerationRate="fast"
-          onMomentumScrollEnd={handleVerticalScrollEnd} onScrollEndDrag={handleVerticalScrollEnd}
+          onScrollBeginDrag={handleUserScrollBegin}
+          onScrollEndDrag={handleVerticalScrollEndDrag}
+          onMomentumScrollBegin={handleVerticalMomentumBegin}
+          onMomentumScrollEnd={handleVerticalMomentumEnd}
           onContentSizeChange={handleCanvasReady} testID="tree-vertical-scroll">
           <ScrollView ref={horizontalScrollRef} horizontal={true} bounces={false} pagingEnabled={false}
             snapToOffsets={columnSnapOffsets} decelerationRate="fast" directionalLockEnabled={true}
             nestedScrollEnabled={true} showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={handleHorizontalScrollEnd} onScrollEndDrag={handleHorizontalScrollEnd}
+            onScrollBeginDrag={handleUserScrollBegin}
+            onScrollEndDrag={handleHorizontalScrollEndDrag}
+            onMomentumScrollBegin={handleHorizontalMomentumBegin}
+            onMomentumScrollEnd={handleHorizontalMomentumEnd}
             contentContainerStyle={{ width: canvasWidth }} testID="tree-horizontal-scroll">
             <View style={{ width: canvasWidth, height: canvasHeight }}>
               <Animated.View
@@ -762,7 +919,11 @@ export default function TreeScreen() {
                   <NodeBubble key={node.id} node={node} point={point} unlocked={unlocked} complete={complete}
                     hasProgress={hasProgress} focused={focusedNodeId === node.id}
                     onPress={async () => {
-                      if (!unlocked) { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); return; }
+                      if (!unlocked) {
+                        focusNodeId(node.id, true);
+                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                        return;
+                      }
                       if (openNodeTimeoutRef.current) clearTimeout(openNodeTimeoutRef.current);
                       await Haptics.selectionAsync();
                       focusNodeId(node.id, true);
@@ -770,6 +931,15 @@ export default function TreeScreen() {
                     }} />
                 );
               })}
+              <TreeAvatar
+                avatar={avatarConfig}
+                target={avatarTarget}
+                fallback={avatarFallback}
+                unlocked={avatarUnlocked}
+                movementKey={focusedNodeId}
+                activity={avatarActivity}
+                color={avatarColor}
+              />
               </Animated.View>
               {energyTravel ? (
                 <EnergyDot
@@ -813,7 +983,7 @@ const scanlineStyles = StyleSheet.create({
 
 const ringStyles = StyleSheet.create({
   wrap: { width: 68, height: 68, alignItems: "center", justifyContent: "center" },
-  blur: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: "rgba(93,225,255,0.12)" },
+  blur: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: Colors.light.surfaceDeep, borderWidth: 2, borderColor: "rgba(49,92,255,0.5)" },
   inner: { position: "absolute", alignItems: "center" },
   pct: { fontSize: 13, fontWeight: "900", color: Colors.light.text },
 });
@@ -821,23 +991,23 @@ const ringStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: APP_BACKGROUND },
   safeArea: { flex: 1 },
-  ambientOrb: { position: "absolute", width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(93,225,255,0.06)", top: -100, right: -100, zIndex: 0 },
+  ambientOrb: { position: "absolute", width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(49,92,255,0.08)", top: -100, right: -100, zIndex: 0 },
   headerWrap: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 20, paddingHorizontal: 14, paddingTop: 6 },
-  headerBlur: { borderRadius: 24, overflow: "hidden", paddingHorizontal: 18, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(8,14,28,0.72)", borderWidth: 1, borderColor: "rgba(93,225,255,0.10)" },
+  headerBlur: { borderRadius: 18, overflow: "hidden", paddingHorizontal: 18, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(11,16,43,0.9)", borderWidth: 2, borderColor: "rgba(49,92,255,0.42)" },
   headerLeft: { flex: 1 },
   headerBrandRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 3 },
   headerBrandDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: NEON_CYAN, shadowColor: NEON_CYAN, shadowOpacity: 0.6, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
-  brand: { fontSize: 10, letterSpacing: 3, color: NEON_CYAN, fontWeight: "800", textTransform: "uppercase" },
-  greeting: { fontSize: 20, fontWeight: "800", color: "#F0F4FF", letterSpacing: -0.5 },
+  brand: { fontFamily: "monospace", fontSize: 10, letterSpacing: 3, color: NEON_CYAN, fontWeight: "900", textTransform: "uppercase" },
+  greeting: { fontSize: 20, fontWeight: "900", color: Colors.light.text, letterSpacing: -0.5 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   headerStats: { alignItems: "flex-end", gap: 2 },
-  headerStatValue: { fontSize: 17, fontWeight: "900", color: "#F0F4FF", letterSpacing: -0.3 },
+  headerStatValue: { fontFamily: "monospace", fontSize: 16, fontWeight: "900", color: Colors.light.text, letterSpacing: -0.3 },
   headerStatMuted: { color: "#5A6B92", fontWeight: "700" },
   headerStatLabel: { fontSize: 8, letterSpacing: 1.5, color: "#4A5680", fontWeight: "700" },
-  headerDivider: { width: 1, height: 28, backgroundColor: "rgba(93,225,255,0.12)" },
+  headerDivider: { width: 2, height: 28, backgroundColor: "rgba(49,92,255,0.32)" },
   streakPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   streakPillText: { fontSize: 13, fontWeight: "900" },
-  xpBarContainer: { marginTop: 8, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 16, backgroundColor: "rgba(8,14,28,0.6)", borderWidth: 1, borderColor: "rgba(93,225,255,0.08)", gap: 6 },
+  xpBarContainer: { marginTop: 8, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: "rgba(11,16,43,0.92)", borderWidth: 2, borderColor: "rgba(49,92,255,0.28)", gap: 6 },
   xpBarTrack: { height: 5, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 999, overflow: "hidden" },
   xpBarFill: { height: "100%", backgroundColor: NEON_CYAN, borderRadius: 999, shadowColor: NEON_CYAN, shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   xpBarMetaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -845,7 +1015,7 @@ const styles = StyleSheet.create({
   rankPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   rankPillText: { fontSize: 10, fontWeight: "800" },
   xpFlash: { position: "absolute", top: HEADER_HEIGHT + 60, left: 0, right: 0, alignItems: "center", zIndex: 30 },
-  xpFlashBubble: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, overflow: "hidden", backgroundColor: "rgba(8,14,28,0.8)", borderWidth: 1, borderColor: alpha(NEON_CYAN, "30") },
+  xpFlashBubble: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, overflow: "hidden", backgroundColor: Colors.light.surfaceDeep, borderWidth: 2, borderColor: alpha(NEON_CYAN, "70") },
   xpFlashText: { fontSize: 13, fontWeight: "800", color: NEON_CYAN },
   verticalScroll: { flex: 1, zIndex: 2 },
   horizontalScrollContent: { width: "100%", paddingBottom: 40 },
@@ -857,8 +1027,7 @@ const styles = StyleSheet.create({
   glowMid: { position: "absolute", width: 128, height: 128, borderRadius: 64 },
   glowInner: { position: "absolute", width: 110, height: 110, borderRadius: 55, borderWidth: 1, backgroundColor: "transparent" },
   focusRing: { position: "absolute", width: NODE_GLOW_SIZE - 10, height: NODE_GLOW_SIZE - 10, borderRadius: (NODE_GLOW_SIZE - 10) / 2, borderWidth: 1.5, borderStyle: "dashed" },
-  nodeCore: { alignItems: "center", justifyContent: "center", borderWidth: 2, overflow: "hidden" },
-  nodeInnerRing: { position: "absolute", top: 8, bottom: 8, left: 8, right: 8, borderRadius: 999, borderWidth: 1 },
+  nodeCore: { alignItems: "center", justifyContent: "center" },
   progressDot: { position: "absolute", width: 14, height: 14, borderRadius: 7, borderWidth: 2, top: 8, right: 8 },
   completeBadge: { position: "absolute", width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2.5, borderColor: APP_BACKGROUND, top: -2, right: -2 },
   completeBadgeCheck: { fontSize: 11, fontWeight: "900", color: "#000" },
@@ -869,14 +1038,14 @@ const styles = StyleSheet.create({
   nodeLevelLabel: { fontSize: 9, fontWeight: "700", letterSpacing: 1, marginTop: 2 },
   originLabelPill: { backgroundColor: alpha(NEON_CYAN, "18"), borderColor: alpha(NEON_CYAN, "30") },
   originLabel: { color: Colors.light.text, fontSize: 15 },
-  authBgGrid: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: APP_BACKGROUND },
+  authBgGrid: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: APP_BACKGROUND, borderWidth: 18, borderColor: "rgba(49,92,255,0.12)" },
   authScroll: { padding: 24, paddingTop: 60, gap: 24, flexGrow: 1 },
   authHero: { gap: 14, marginBottom: 4 },
   authBrandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   authBrandDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: NEON_CYAN, shadowColor: NEON_CYAN, shadowOpacity: 0.7, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
-  authTitle: { fontSize: 42, fontWeight: "900", color: "#F0F4FF", lineHeight: 48, letterSpacing: -1 },
+  authTitle: { fontFamily: "monospace", fontSize: 38, fontWeight: "900", color: Colors.light.text, lineHeight: 45, letterSpacing: -1 },
   authSub: { fontSize: 15, color: "#7A8AB0", lineHeight: 23 },
-  proUpsellCard: { borderRadius: 24, padding: 20, gap: 16, borderWidth: 1.5, borderColor: alpha(NEON_CYAN, "20"), backgroundColor: "rgba(8,14,28,0.6)" },
+  proUpsellCard: { borderRadius: 10, padding: 20, gap: 16, borderWidth: 2, borderColor: Colors.light.arcadeBlue, backgroundColor: Colors.light.surfaceDeep },
   proUpsellHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   proUpsellCrownWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,215,0,0.12)", borderWidth: 1.5, borderColor: "rgba(255,215,0,0.3)", alignItems: "center", justifyContent: "center" },
   proUpsellHeaderText: { flex: 1 },
@@ -891,10 +1060,10 @@ const styles = StyleSheet.create({
   proUpsellPriceRow: { flexDirection: "row", alignItems: "baseline", gap: 6 },
   proUpsellPrice: { fontSize: 28, fontWeight: "900", color: "#FFD700" },
   proUpsellPricePeriod: { fontSize: 12, color: "#7A8AB0", fontWeight: "600" },
-  authCard: { borderRadius: 24, padding: 22, gap: 16, overflow: "hidden", borderWidth: 1, borderColor: "rgba(93,225,255,0.10)", backgroundColor: "rgba(8,14,28,0.5)" },
+  authCard: { borderRadius: 10, padding: 22, gap: 16, overflow: "hidden", borderWidth: 2, borderColor: "rgba(49,92,255,0.55)", backgroundColor: Colors.light.surfaceDeep },
   authCardLabel: { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: NEON_CYAN, fontWeight: "800" },
-  authInput: { backgroundColor: "rgba(5,8,17,0.9)", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 17, color: Colors.light.text, borderWidth: 1, borderColor: "rgba(93,225,255,0.12)" },
-  primaryBtn: { backgroundColor: NEON_CYAN, borderRadius: 16, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: NEON_CYAN, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  authInput: { backgroundColor: APP_BACKGROUND, borderRadius: 4, paddingHorizontal: 16, paddingVertical: 14, fontSize: 17, color: Colors.light.text, borderWidth: 2, borderColor: Colors.light.border },
+  primaryBtn: { backgroundColor: NEON_CYAN, borderRadius: 4, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 3, borderColor: "#FFF3A3", shadowColor: NEON_CYAN, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   primaryBtnDisabled: { opacity: 0.35 },
   primaryBtnText: { fontSize: 16, fontWeight: "900", color: "#050811", letterSpacing: 0.3 },
   authFooter: { fontSize: 9, letterSpacing: 2, color: "#2A3556", fontWeight: "700", textAlign: "center", textTransform: "uppercase" },

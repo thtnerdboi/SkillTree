@@ -29,11 +29,13 @@ import {
   getPrestigeXpMultiplier,
 } from "../mocks/mvp-data";
 import type { FitnessLogEntry } from "../utils/fitness-verify";
+import type { AvatarConfig } from "../components/PixelAvatar";
 
 export type OnboardingAnswers = {
   body: string;
   mind: string;
   craft: string;
+  avatar?: AvatarConfig;
 };
 
 export type Friend = {

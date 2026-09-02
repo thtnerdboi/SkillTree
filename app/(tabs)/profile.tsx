@@ -34,6 +34,10 @@ const REWARDED_UNIT_ID = Platform.select({
     ? "ca-app-pub-3940256099942544/1712485313"
     : "ca-app-pub-5851180331769845/4258960118",
 }) ?? "ca-app-pub-3940256099942544/5224354917";
+
+type RewardedAdHandle = {
+  show: () => Promise<void>;
+};
 import {
   Award,
   CheckCircle,
@@ -62,8 +66,10 @@ import {
 } from "../../mocks/mvp-data";
 import { useAppState } from "../../state/app-state";
 import { AdBanner } from "../../components/AdBanner";
+import { PixelAvatar } from "../../components/PixelAvatar";
 import { ProUpgradeModal } from "../../components/ProUpgradeModal";
 import { useRevenueCat } from "../../lib/revenuecat";
+import { getAvatarForRank } from "../../utils/avatar-presets";
 import {
   STREAK_MILESTONES,
   getLast7Days,
@@ -101,7 +107,7 @@ export default function ProfileScreen() {
 
   // Rewarded ad — preloaded on mount so it's ready when the user taps.
   // Each RewardedAd instance can only be shown once; after dismiss we create a new one.
-  const rewardedAdRef = useRef<RewardedAd | null>(null);
+  const rewardedAdRef = useRef<RewardedAdHandle | null>(null);
   const addBonusXpRef = useRef(addBonusXp);
   useEffect(() => { addBonusXpRef.current = addBonusXp; }, [addBonusXp]);
 
@@ -198,6 +204,7 @@ export default function ProfileScreen() {
   };
 
   const avatarLetter = (state.displayName || "A").charAt(0).toUpperCase();
+  const avatarPreset = getAvatarForRank(state.prestigeCount);
   const currentPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount);
   const nextPrestige = getPrestigeRank(state.prestigeCount + 1);
   const nextPrestigeBonus = getPrestigeBonusLabel(state.prestigeCount + 1);
@@ -230,13 +237,17 @@ export default function ProfileScreen() {
 
           <View style={styles.heroCard}>
             <View style={styles.heroTop}>
-              <View style={[styles.avatar, { borderColor: `${prestigeRank.color}50` }]}>
-                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-                {state.prestigeCount > 0 && (
-                  <View style={[styles.avatarPrestigeBadge, { backgroundColor: prestigeRank.color }]}>
-                    <Text style={styles.avatarPrestigeNum}>{state.prestigeCount}</Text>
-                  </View>
-                )}
+              <View style={styles.avatarGroup}>
+                <View style={[styles.avatar, { borderColor: `${prestigeRank.color}50` }]}>
+                  <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+                  {state.prestigeCount > 0 && (
+                    <View style={[styles.avatarPrestigeBadge, { backgroundColor: prestigeRank.color }]}>
+                      <Text style={styles.avatarPrestigeNum}>{state.prestigeCount}</Text>
+                    </View>
+                  )}
+                </View>
+                {/* Preview/temporary: keep alongside the letter avatar until the full swap is approved. */}
+                <PixelAvatar {...avatarPreset} size={80} />
               </View>
 
               <View style={styles.heroInfo}>
@@ -626,7 +637,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: "#060810" },
+  shell: { flex: 1, backgroundColor: Colors.light.background },
   safeArea: { flex: 1 },
   scroll: { padding: 22, paddingBottom: 110, gap: 14 },
 
@@ -634,8 +645,9 @@ const styles = StyleSheet.create({
   brand: { fontFamily: "OutfitBlack", fontSize: 11, letterSpacing: 3.5, color: Colors.light.tint, textTransform: "uppercase" },
   pageTitle: { fontFamily: "OutfitBlack", fontSize: 30, color: Colors.light.text, marginTop: 4 },
 
-  heroCard: { backgroundColor: "#0C1120", borderRadius: 24, padding: 20, gap: 20, borderWidth: 1, borderColor: "#1A2238" },
+  heroCard: { backgroundColor: Colors.light.card, borderRadius: 14, padding: 20, gap: 20, borderWidth: 2, borderColor: Colors.light.border },
   heroTop: { flexDirection: "row", gap: 16, alignItems: "flex-start" },
+  avatarGroup: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   avatar: { width: 70, height: 70, borderRadius: 35, backgroundColor: `${Colors.light.tint}15`, borderWidth: 2, alignItems: "center", justifyContent: "center", position: "relative" },
   avatarLetter: { fontFamily: "OutfitBlack", fontSize: 30, color: Colors.light.tint },
   avatarPrestigeBadge: { position: "absolute", bottom: -2, right: -2, width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
@@ -660,11 +672,11 @@ const styles = StyleSheet.create({
   xpBarLabel: { fontFamily: "OutfitSemiBold", fontSize: 11, color: Colors.light.muted },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: { flex: 1, minWidth: "30%", backgroundColor: "#0C1120", borderRadius: 18, padding: 14, gap: 4, alignItems: "center", borderWidth: 1, borderColor: "#1A2238" },
+  statCard: { flex: 1, minWidth: "30%", backgroundColor: Colors.light.card, borderRadius: 10, padding: 14, gap: 4, alignItems: "center", borderWidth: 2, borderColor: Colors.light.border },
   statValue: { fontFamily: "OutfitBlack", fontSize: 20, color: Colors.light.text },
   statLabel: { fontFamily: "OutfitSemiBold", fontSize: 10, color: Colors.light.muted, textAlign: "center" },
 
-  sectionCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 14, borderWidth: 1, borderColor: "#1A2238" },
+  sectionCard: { backgroundColor: Colors.light.card, borderRadius: 12, padding: 20, gap: 14, borderWidth: 2, borderColor: Colors.light.border },
   sectionTitle: { fontFamily: "OutfitBold", fontSize: 10, letterSpacing: 2.5, textTransform: "uppercase", color: Colors.light.muted },
 
   // Streak section
@@ -740,7 +752,7 @@ const styles = StyleSheet.create({
 
   footer: { fontFamily: "OutfitSemiBold", textAlign: "center", fontSize: 11, color: "#1A2238", letterSpacing: 1, paddingTop: 4 },
 
-  proCard: { backgroundColor: "#0C1120", borderRadius: 22, padding: 20, gap: 16, borderWidth: 1.5, borderColor: "#FFD70040" },
+  proCard: { backgroundColor: Colors.light.card, borderRadius: 12, padding: 20, gap: 16, borderWidth: 2, borderColor: "#FFD60A70" },
   proCardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
   proCrownWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#FFD70015", borderWidth: 1.5, borderColor: "#FFD70040", alignItems: "center", justifyContent: "center" },
   proCardInfo: { flex: 1 },

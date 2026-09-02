@@ -1,19 +1,26 @@
-const tintColorLight = "#5DE1FF";
+const tintColorLight = "#FFD60A";
 
 const Colors = {
   light: {
-    text: "#E8EBF7",
-    background: "#0B0C12",
-    card: "#151828",
+    text: "#F8F4E3",
+    background: "#080A1D",
+    card: "#11183A",
+    surfaceDeep: "#0B102B",
     tint: tintColorLight,
-    tabIconDefault: "#6C7394",
+    tintSoft: "#2A2818",
+    arcadeBlue: "#315CFF",
+    ghostCyan: "#45E9FF",
+    ghostPink: "#FF9FF3",
+    cherry: "#FF5C5C",
+    pellet: "#FFD60A",
+    tabIconDefault: "#7C83A8",
     tabIconSelected: tintColorLight,
-    muted: "#9AA3C7",
-    border: "#262A3C",
-    success: "#3DFF8E",
-    softBlue: "#1A2236",
-    softPeach: "#20263D",
-    error: "#FF6B6B",
+    muted: "#A4A9C6",
+    border: "#26366F",
+    success: "#72F1B8",
+    softBlue: "#151F4A",
+    softPeach: "#2E1C35",
+    error: "#FF5C5C",
   },
 };
 
