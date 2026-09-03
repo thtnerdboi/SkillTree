@@ -3,7 +3,7 @@ const tintColorLight = "#FFD60A";
 const Colors = {
   light: {
     text: "#F8F4E3",
-    background: "#080A1D",
+    background: "#000000",
     card: "#11183A",
     surfaceDeep: "#0B102B",
     tint: tintColorLight,
