@@ -183,7 +183,7 @@ export function NodePanel({ node, onClose, iconMap, flashXP, onNodeComplete }: P
       <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
         <Pressable style={styles.backdrop} onPress={close} testID="close-panel-backdrop" />
         
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, justifyContent: "flex-end" }}>
           <Animated.View
             style={[
               styles.modalCard,

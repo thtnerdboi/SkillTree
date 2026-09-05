@@ -24,6 +24,7 @@
       },
       "package": "com.arcstep.skilltree",
       "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "com.android.vending.BILLING"
       ]

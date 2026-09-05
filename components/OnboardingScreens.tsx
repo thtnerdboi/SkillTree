@@ -239,7 +239,7 @@ export function OnboardingScreens({ onComplete, isGenerating, generateError }: P
 
   return (
     <OnboardingShell>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.safeArea}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.safeArea}>
         <ScrollView
           ref={goalScrollRef}
           contentContainerStyle={styles.authScroll}
